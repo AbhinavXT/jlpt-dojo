@@ -1,0 +1,17 @@
+{
+  "name": "jlpt-dojo",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Offline JLPT N5→N1 course: study materials plus the N5 Dojo single-file trainer (FSRS, drills, stroke order, mocks).",
+  "scripts": {
+    "build": "python3 n5-dojo/build.py",
+    "test": "node n5-dojo/tests/unit.test.js",
+    "e2e": "node n5-dojo/tests/e2e.js",
+    "check": "python3 n5-dojo/build.py && node n5-dojo/tests/unit.test.js && node n5-dojo/tests/e2e.js",
+    "fetch-data": "python3 n5-dojo/fetch_data.py"
+  },
+  "devDependencies": {
+    "playwright": "1.49.1"
+  },
+  "engines": { "node": ">=18" }
+}

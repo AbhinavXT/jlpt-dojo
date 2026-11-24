@@ -1,0 +1,22 @@
+name: ci
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - name: Build (must match committed n5-dojo.html)
+        run: |
+          python3 n5-dojo/build.py
+          git diff --exit-code n5-dojo.html
+      - name: Unit + data tests
+        run: node n5-dojo/tests/unit.test.js
+      - name: End-to-end (Playwright)
+        run: |
+          npm install --no-audit --no-fund
+          npx playwright install --with-deps chromium
+          node n5-dojo/tests/e2e.js
