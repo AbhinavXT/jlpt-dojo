@@ -186,3 +186,4 @@ ruby rt{font-size:.55em;color:var(--muted)}
 .grades.three{grid-template-columns:repeat(3,1fr)}
 .guide table{margin:8px 0}.guide .big-ex{font-size:22px;background:var(--surface2);padding:8px 12px;border-radius:8px}
 .guide li{margin:4px 0}
+.guide table{display:block;overflow-x:auto;max-width:100%}.guide td,.guide th{white-space:nowrap}

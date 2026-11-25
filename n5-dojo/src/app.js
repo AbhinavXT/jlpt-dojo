@@ -718,7 +718,7 @@ DRILL_VIEWS.read = id => {
   if (!DR || DR.name !== "read" || DR.id !== +id) DR = { name: "read", id: +id, picks: {}, showEn: false, qs: r.q.map(q => ({ q: q[0], a: q[1], opts: shuffle(q.slice(1)) })) };
   const q = DR, answered = Object.keys(q.picks).length, score = q.qs.filter((x, k) => q.picks[k] === x.a).length;
   app().innerHTML = `<section class="card"><div class="spread small muted"><a href="#drills/read">← Passages</a><span class="tag">N${r.lv}</span></div>
-    <h2 class="jp">${esc(r.t)} ${sayBtn(r.text)}</h2><div class="jp passage">${esc(r.text)}</div>
+    <h2 class="jp">${esc(r.t)} ${sayBtn(plainJa(r.text))}</h2><div class="jp passage ${S.settings.furi ? "" : "furi-tap"}">${ruby(r.text)}</div>${/\[/.test(r.text) && !S.settings.furi ? `<div class="small muted">Tap a kanji to see its reading.</div>` : ""}
     <button class="btn ghost sm" data-act="ren">${q.showEn ? "Hide" : "Show"} translation</button>${q.showEn ? `<p class="muted">${esc(r.en)}</p>` : ""}
     ${q.qs.map((x, k) => `<div class="rq"><div class="jp"><b>Q${k + 1}.</b> ${esc(x.q)}</div>${optsHTML(x.opts, x.a, q.picks[k] ?? null, "rpick").replace(/data-o=/g, `data-q="${k}" data-o=`)}</div>`).join("")}
     ${answered === q.qs.length ? `<div class="ans ${score === q.qs.length ? "ok" : "bad"}">${score}/${q.qs.length}</div><div class="bar"><a class="btn" href="#drills/read">More passages</a></div>` : ""}</section>`;
@@ -889,7 +889,7 @@ function qListenSent(pool) { if (!pool.length) return null; const it = rnd(pool)
 function qListenNum() { const q = numQuestion("listen"); const wrong = new Set(); let g = 0; while (wrong.size < 3 && g++ < 80) { const w = numQuestion("listen"); if (w.k === q.k && w.show !== q.show) wrong.add(w.show); } return mcq("聴解", `<span class="muted small">Listen. Which ${q.hint} did you hear?</span>`, q.show, [...wrong], null, q.ans[0]); }
 function readingQs(lv, max) {
   const out = [];
-  for (const r of shuffle(READINGS.filter(r => r.lv === lv))) { for (const q of r.q) { if (out.length >= max) break; out.push(mcq("読解", `<div class="jp passage sm">${esc(r.text)}</div><div class="jp"><b>${esc(q[0])}</b></div>`, q[1], q.slice(2), null)); } if (out.length >= max) break; }
+  for (const r of shuffle(READINGS.filter(r => r.lv === lv))) { for (const q of r.q) { if (out.length >= max) break; out.push(mcq("読解", `<div class="jp passage sm furi-tap">${ruby(r.text)}</div><div class="jp"><b>${esc(q[0])}</b></div>`, q[1], q.slice(2), null)); } if (out.length >= max) break; }
   return out;
 }
 function qKana() { const pool = ORDER.kana[5].map(id => ITEMS[id]); const it = rnd(pool); return mcq("Kana", `<div class="jp huge">${it.ch}</div>`, it.r, distract(pool, it, 3, i => i.r).map(i => i.r), it.id); }

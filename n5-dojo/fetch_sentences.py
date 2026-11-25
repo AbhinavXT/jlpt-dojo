@@ -112,7 +112,7 @@ def main():
     def max_level_ok(ja, lv):  # every kanji in the sentence is at level >= lv (i.e. no harder kanji)
         return all(klv.get(c, 0) >= lv for c in ja if HAN.match(c))
     words = vocab()
-    examples = {}
+    examples, freq = {}, {}
     # max kanji difficulty (lowest JLPT number) appearing in a sentence: 5 = only N5 kanji / kana, 0 = non-JLPT kanji
     hardest = [min([klv.get(c, 0) for c in ja if HAN.match(c)] or [5]) for _, ja, _, _ in rows]
     for lv, ws in words.items():
@@ -131,6 +131,7 @@ def main():
                 forms.append((kana, None))
             if not forms:
                 continue
+            freq[key] = sum(1 for _, ja, fu, _ in rows if any(f in ja and (want is None or covered_reading(fu, f) == want) for f, want in forms)) if lv >= 4 else 0
             tiers = {0: [], 1: [], 2: []}  # 0: kanji within the word's level, 1: one level harder, 2: anything
             for idx, (rank, ja, fu, en) in enumerate(rows):
                 for f, want in forms:
@@ -157,6 +158,7 @@ def main():
     print("graded sentences", {k: len(v) for k, v in graded.items()})
     dump = lambda o: json.dumps(o, ensure_ascii=False, separators=(",", ":"))
     (OUT / "examples.json").write_text(dump(examples), encoding="utf-8")
+    (OUT / "freq.json").write_text(dump({k: v for k, v in freq.items() if v}), encoding="utf-8")
     (OUT / "sentences.json").write_text(dump(graded), encoding="utf-8")
 
 if __name__ == "__main__":

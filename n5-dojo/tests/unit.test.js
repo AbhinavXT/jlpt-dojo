@@ -11,10 +11,10 @@ const ok = (c, msg) => { if (!c) throw new Error(msg); };
 
 // load data files into a sandbox
 const ctx = {}; vm.createContext(ctx);
-for (const f of ["data_kana.js", "data_kanji.js", "data_grammar.js", "data_grammar_up.js", "data_words.js", "data_reading.js", "data_order.js", "curriculum.js"])
+for (const f of ["data_kana.js", "data_kanji.js", "data_grammar.js", "data_grammar_up.js", "data_words.js", "data_reading.js", "data_reading2.js", "data_order.js", "data_mnemonics.js", "data_guide.js", "data_n4notes.js", "curriculum.js"])
   vm.runInContext(fs.readFileSync(path.join(SRC, f), "utf8") + `\n;globalThis.__=Object.assign(globalThis.__||{}, {${{
     "data_kana.js": "KANA_GROUPS,KANA_NOTES", "data_kanji.js": "KANJI", "data_grammar.js": "GRAMMAR", "data_grammar_up.js": "GRAMMAR_UP",
-    "data_words.js": "VERBS,ADJS", "data_reading.js": "READINGS", "data_order.js": "ORDER_SENTENCES", "curriculum.js": "PACING,PHASES,WEEKS,F" }[f]}});`, ctx);
+    "data_words.js": "VERBS,ADJS", "data_reading.js": "READINGS", "data_order.js": "ORDER_SENTENCES", "data_reading2.js": "READINGS", "data_mnemonics.js": "MNEMO", "data_guide.js": "GUIDE", "data_n4notes.js": "N4_NOTES", "curriculum.js": "PACING,PHASES,WEEKS,F" }[f]}});`, ctx);
 const D = ctx.__;
 const KANJI_UP = JSON.parse(fs.readFileSync(path.join(SRC, "data", "kanji_levels.json"), "utf8"));
 const STROKES = JSON.parse(fs.readFileSync(path.join(SRC, "data", "strokes.json"), "utf8"));
@@ -114,6 +114,41 @@ t("curriculum covers 31 weeks and links real files", () => {
 t("vocab CSV parses for all levels", () => {
   const csv = fs.readFileSync(path.join(__dirname, "..", "..", "jlpt_vocab.csv"), "utf8");
   for (const l of ["N5", "N4", "N3", "N2", "N1"]) ok(csv.includes("," + l), l);
+});
+
+// ---- v3: writing, reading, lessons ----
+global.esc = s => String(s);
+const W = require(path.join(SRC, "writer.js"));
+t("furigana: ruby, plain text, reading", () => {
+  eq(W.plainJa("[説明|せつ|めい]している"), "説明している"); eq(W.readingOf("[説明|せつ|めい]している"), "せつめいしている");
+  ok(W.ruby("[日本|にほん]").includes("<rt>にほん</rt>"), "group ruby"); ok(W.ruby("[説明|せつ|めい]").split("<ruby>").length === 3, "per-char ruby");
+  eq(W.ruby("[7|]"), "7");
+});
+t("stroke grader geometry", () => {
+  const line = (x1, y1, x2, y2) => Array.from({ length: 24 }, (_, i) => [x1 + ((x2 - x1) * i) / 23, y1 + ((y2 - y1) * i) / 23]);
+  const exp = line(20, 50, 90, 50), L = 70;
+  ok(W.WGEO.compare(W.WGEO.resample(line(22, 53, 88, 48)), exp, L).ok, "near-identical stroke accepted");
+  eq(W.WGEO.compare(W.WGEO.resample(line(90, 50, 20, 50)), exp, L).why, "dir", "reversed stroke");
+  ok(!W.WGEO.compare(W.WGEO.resample(line(55, 10, 55, 95)), exp, L).ok, "vertical vs horizontal rejected");
+  ok(!W.WGEO.compare(W.WGEO.resample(line(20, 90, 90, 90)), exp, L).ok, "shifted stroke rejected");
+  eq(W.WGEO.resample([[1, 1], [9, 1]], 5).length, 5);
+});
+t("mnemonics cover every basic kana", () => { D.KANA_GROUPS.slice(0, 5).forEach(g => g.rows.forEach(r => { if (!/[がぎぐげござじずぜぞガギグゲゴザジズゼゾ]/.test(r[0])) { ok(D.MNEMO[r[0]], "mnemonic " + r[0]); ok(D.MNEMO[r[1]], "mnemonic " + r[1]); } })); });
+t("guide lessons: unique ids, valid checks", () => {
+  eq(new Set(D.GUIDE.map(g => g.id)).size, D.GUIDE.length);
+  D.GUIDE.forEach(g => { ok(g.body && g.t && [5, 4].includes(g.lv), g.id); (g.check || []).forEach(c => { eq(c.length, 5, g.id); eq(new Set(c.slice(1)).size, 4, "dup options " + g.id); }); });
+  ok(D.GUIDE.filter(g => g.lv === 5).length >= 12 && D.GUIDE.filter(g => g.lv === 4).length >= 6, "lesson counts");
+});
+t("N4 notes match N4 grammar patterns", () => { const pats = new Set(D.GRAMMAR_UP[4].map(r => r[0])); const keys = Object.keys(D.N4_NOTES); keys.forEach(k => ok(pats.has(k), "unknown pattern " + k)); ok(keys.length >= pats.size - 2, `notes ${keys.length}/${pats.size}`); });
+t("passages: furigana markup well-formed", () => {
+  D.READINGS.forEach(r => { const plain = W.plainJa(r.text); ok(!/[\[\]|]/.test(plain), "unbalanced markup in " + r.t); });
+  ok(D.READINGS.filter(r => r.lv === 5).length >= 13 && D.READINGS.filter(r => r.lv === 4).length >= 10, "passage counts");
+});
+t("example + graded sentence data", () => {
+  const ex = JSON.parse(fs.readFileSync(path.join(SRC, "data", "examples.json"), "utf8")), sen = JSON.parse(fs.readFileSync(path.join(SRC, "data", "sentences.json"), "utf8"));
+  ok(Object.keys(ex).length > 2000, "examples"); ok(sen[5].length >= 1000 && sen[4].length >= 1000, "graded sentences");
+  Object.values(ex).slice(0, 300).forEach(v => v.forEach(([fu, en]) => ok(fu && en && !/[\[\]]/.test(W.plainJa(fu)), "bad example " + fu)));
+  const parts = JSON.parse(fs.readFileSync(path.join(SRC, "data", "parts.json"), "utf8")); ok(parts["休"] && parts["休"].length === 2, "parts 休 = 亻 + 木");
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);

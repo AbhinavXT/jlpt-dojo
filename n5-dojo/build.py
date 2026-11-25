@@ -28,9 +28,12 @@ def load_vocab():
         item = [w, k, e]
         seen[key] = item
         levels[lv].append(item)
-    # Learning order: plain words first, shorter readings first, affixes (～) last.
+    # Learning order: most frequent in everyday sentences first (src/data/freq.json, from Tatoeba);
+    # unseen words after, shorter first; affixes (～) last.
+    fp = SRC / "data" / "freq.json"
+    freq = json.loads(fp.read_text(encoding="utf-8")) if fp.exists() else {}
     for lv in levels:
-        levels[lv].sort(key=lambda x: (x[0].startswith("～"), len(x[1]), x[1]))
+        levels[lv].sort(key=lambda x: (x[0].startswith("～"), -freq.get(f"{x[0]}|{x[1]}", 0), len(x[1]), x[1]))
     return levels
 
 def main():
@@ -42,7 +45,7 @@ def main():
     for const, name in [("EXAMPLES", "examples.json"), ("SENTENCES", "sentences.json"), ("PARTS", "parts.json")]:
         data += f"const {const} = " + (SRC / "data" / name).read_text(encoding="utf-8") + ";\n"
     for name in ["core.js", "data_kana.js", "data_kanji.js", "data_grammar.js", "data_grammar_up.js", "data_words.js",
-                 "data_reading.js", "data_order.js", "data_mnemonics.js", "data_guide.js", "data_n4notes.js", "curriculum.js"]:
+                 "data_reading.js", "data_reading2.js", "data_order.js", "data_mnemonics.js", "data_guide.js", "data_n4notes.js", "curriculum.js"]:
         data += (SRC / name).read_text(encoding="utf-8") + "\n"
     html = (SRC / "template.html").read_text(encoding="utf-8")
     for tag, content in [("/*CSS*/", (SRC / "style.css").read_text(encoding="utf-8")),

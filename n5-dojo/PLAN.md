@@ -62,12 +62,28 @@ Files used from this folder: Tofugu guide, the `jap/` writing sheets, flash card
 
 For N4 and above, the app generates a plan automatically: about 55% of the weeks for learning, then consolidation, then exam prep with official timings. Use the free sample questions on jlpt.jp and the 公式問題集 workbooks for official practice.
 
+## Reading and writing: how the app builds them
+**Writing (the hard part):**
+- Every kana and N5/N4 kanji you learn creates a **writing card**. The first time you trace it over a faint guide; after that you write it from memory on the pad.
+- Each stroke is checked against KanjiVG for shape, position, **direction** and **order**. Mistakes get specific feedback ("wrong direction", "that's stroke 3, write stroke 2 first"), and a hint appears after two misses.
+- The FSRS grade comes from the result: perfect → Good, a few misses → Hard, hint used → Again.
+- **Drills → Writing** practises kana, kanji and **whole words** (handwrite 先生, レコード… one character at a time).
+- **Guide lesson 3** teaches the stroke-order rules and stroke endings (とめ, はね, はらい). Pair it with the `jap/WRITING PRACTICE` sheets.
+
+**Reading:**
+- About 2,700 vocab cards show real **Tatoeba example sentences**. Readings are verified against the furigana, and easier-kanji sentences are preferred.
+- **Drills → Sentence reading** draws from 3,000 graded sentences that use only N5 or N4 kanji. Tap a word for its furigana, or try *Listen first*.
+- 29 graded passages (13 N5, 10 N4, plus N3–N1) with questions, furigana on tap, read-aloud and translation.
+- Vocabulary is ordered by **how often each word appears in 50,000 everyday sentences**, so the most useful words come first (私, 言う, 人, 見る…).
+
+**Understanding:** the **Guide** has 13 N5 lessons (scripts, sounds, handwriting, sentence structure, particles, です, adjectives, verbs, existence, こそあど, numbers, politeness, study method) and 7 N4 lessons (plain form, conditionals, giving/receiving, potential/passive/causative, keigo, transitive pairs, そう/よう/らしい). Each has a quick check. Kana have mnemonics, kanji show their component parts, and every N4 grammar point has an explanation.
+
 ## Methods built into the app (and why)
 - **Spaced repetition with FSRS-6**, the scheduler modern Anki uses. It models stability and difficulty per card and schedules reviews at your target recall (default 90%). Intervals are capped at half the days left before the exam, so everything comes back before exam day.
 - **Retrieval over recognition:** kana, conjugations, numbers and dictation are typed (romaji → kana converter), not just recognised. Production mode shows English first for mature vocab.
 - **Context:** every grammar point comes with example sentences, and N4–N1 quizzes are fill-in-the-blank on real sentences. Sentence-order (★) drills build word-order intuition.
 - **Listening:** offline text-to-speech for every word and sentence, dictation, and number/time listening (the most common N5/N4 listening trap).
-- **Writing:** KanjiVG stroke-order animation for all kana and N5/N4 kanji, plus a trace-then-recall writing pad.
+- **Writing:** stroke-graded handwriting cards and drills (see above), plus KanjiVG stroke-order animation.
 - **Interleaving and testing:** mixed review sessions, a daily rotating drill, per-level timed mocks with the official section names, and wrong answers fed back into reviews.
 
 ## Using the app
@@ -75,13 +91,14 @@ For N4 and above, the app generates a plan automatically: about 55% of the weeks
 - **Audio** needs a Japanese text-to-speech voice. Android: install the Google TTS Japanese voice. Windows: add a Japanese speech voice. Linux Chromium usually has none.
 - **Sync:** export progress to `n5-dojo/progress/` so git carries it between devices; Import merges (the newer review of each card wins). Older v1 progress files are migrated automatically.
 - **Build:** `python3 n5-dojo/build.py`, offline, from `src/` and `jlpt_vocab.csv`. `fetch_data.py` re-downloads the kanji and stroke datasets (needs internet).
-- **Tests:** `node n5-dojo/tests/unit.test.js` checks the engine and data integrity (21 checks). `node n5-dojo/tests/e2e.js [shotDir]` runs a full Playwright walkthrough of every view, drill and mock.
+- **Tests:** `node n5-dojo/tests/unit.test.js` checks the engine and data integrity (28 checks). `node n5-dojo/tests/e2e.js [shotDir]` runs a full Playwright walkthrough of every view, drill and mock.
 
 ## Sources
 - JLPT test sections, timings and pass marks: [jlpt.jp test sections](https://www.jlpt.jp/e/guideline/testsections.html), [scoring](https://jlpt.jp/e/guideline/results.html).
 - FSRS: [py-fsrs](https://github.com/open-spaced-repetition/py-fsrs) default parameters; [algorithm notes](https://expertium.github.io/Algorithm.html).
 - Kanji levels and readings: [davidluzgouveia/kanji-data](https://github.com/davidluzgouveia/kanji-data) (KANJIDIC, EDRDG licence; JLPT levels from tanos.co.uk).
-- Stroke order: [KanjiVG](https://kanjivg.tagaini.net/) (CC BY-SA 3.0).
+- Stroke order and kanji parts: [KanjiVG](https://kanjivg.tagaini.net/) (CC BY-SA 3.0).
+- Example sentences: [Tatoeba](https://tatoeba.org) (CC BY 2.0 FR) via [Tatoeba-Rework](https://github.com/TheSunphis/Tatoeba-Rework).
 - Graded readers: [Tadoku free books](https://tadoku.org/japanese/en/free-books-en/).
 - Study-method background: [Tofugu on the intermediate plateau](https://tofugu.com/japanese/intermediate-japanese-plateau), [Tofugu on SRS](https://www.tofugu.com/japanese/spaced-repetition/).
 
