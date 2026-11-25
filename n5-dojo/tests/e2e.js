@@ -24,6 +24,17 @@ const errs = [];
   const go = async h => { await p.goto(URL + h); await p.waitForTimeout(80); };
   const shot = async n => SHOTS && p.screenshot({ path: path.join(SHOTS, n + ".png"), fullPage: true });
   const ev = (f, a) => p.evaluate(f, a);
+  // handwrite a character on the pad by tracing KanjiVG's own stroke samples with the mouse
+  const write = async (ch, { reverseFirst = false } = {}) => {
+    await p.waitForSelector("#wpad canvas");
+    const S = await ev(c => strokeSamples(c).map(s => s.pts), ch);
+    const r = await p.$eval("#wpad canvas", c => { const b = c.getBoundingClientRect(); return { x: b.x, y: b.y, w: b.width }; });
+    const P = q => [r.x + (q[0] / 109) * r.w, r.y + (q[1] / 109) * r.w];
+    for (let i = 0; i < S.length; i++) {
+      const tries = reverseFirst && i === 0 ? [S[0].slice().reverse(), S[0]] : [S[i]];
+      for (const pts of tries) { await p.mouse.move(...P(pts[0])); await p.mouse.down(); for (const q of pts.slice(1)) await p.mouse.move(...P(q)); await p.mouse.up(); }
+    }
+  };
 
   // 1. migration from v1 state
   await p.goto(URL);
@@ -42,11 +53,16 @@ const errs = [];
   await p.mouse.move(box.x + 20, box.y + 20); await p.mouse.down(); await p.mouse.move(box.x + box.w - 20, box.y + box.w / 2, { steps: 8 }); await p.mouse.up();
   await shot("03-writing-pad"); await p.click('[data-p=close]');
   await p.click("[data-act=lessonDone]");
-  for (let i = 0; i < 30; i++) {
+  let sawWrite = false;
+  for (let i = 0; i < 40; i++) {
     await p.waitForFunction(() => !SES || (location.hash === "#session" && document.querySelector(".session")));
     const it = await ev(() => SES && SES.q.length ? ITEMS[SES.q[0]] : null); if (!it) break;
     if (it.type === "kana") { await p.waitForSelector("#kin"); await p.fill("#kin", i === 2 ? "xx" : it.r); await p.press("#kin", "Enter"); await p.keyboard.press("Enter"); }
-    else { await p.click("[data-act=flip]"); await p.click('[data-act=grade][data-g="3"]'); }
+    else if (it.type === "write") {
+      await write(it.ch, { reverseFirst: i % 4 === 1 }); await p.waitForSelector("[data-act=next]");
+      const wr = await ev(() => SES.wres); if (!wr || wr.grade < 2) throw new Error("writing card graded wrong: " + JSON.stringify(wr));
+      if (!sawWrite) { await shot("02b-write-card"); sawWrite = true; } await p.click("[data-act=next]");
+    } else { await p.click("[data-act=flip]"); await p.click('[data-act=grade][data-g="3"]'); }
   }
   if (!(await p.textContent("#app h2")).includes("Session done")) throw new Error("kana session did not finish");
   log("kana lesson, stroke animation, writing pad, typed review OK");
@@ -57,6 +73,7 @@ const errs = [];
     for (let i = 0; i < 20; i++) {
       await p.waitForFunction(() => !SES || (location.hash === "#session" && document.querySelector(".session") && (ITEMS[SES.q[0]].type !== "grammar" || SES.qa)));
       const it = await ev(() => SES && SES.q.length ? ITEMS[SES.q[0]] : null); if (!it) break;
+      if (it.type === "write") { await write(it.ch); await p.waitForSelector("[data-act=next]"); await p.click("[data-act=next]"); continue; }
       if (it.type === "grammar") { const a = await ev(() => SES.qa[1]); await p.click(`.opt[data-o="${a}"]`); if (i === 0) await shot("04-grammar-card"); await p.click("[data-act=next]"); }
       else { await p.click("[data-act=flip]"); if (i === 0) await shot(`04-${t}-back`); await p.click('[data-act=grade][data-g="3"]'); }
     }
@@ -75,6 +92,26 @@ const errs = [];
   await go("#browse/kanji/1"); const n1 = await p.$$eval(".kcell", c => c.length); if (n1 < 1000) throw new Error("N1 kanji grid " + n1);
   await go("#kanji/%E6%9B%B8"); await shot("05-kanji-detail");
   log(`browse OK (N1 kanji grid ${n1})`);
+
+  if (!sawWrite) throw new Error("no writing cards appeared in the kana lesson session");
+  log("writing cards: traced + graded inside review sessions OK");
+  // 4b. guide + new drills
+  await go("#guide"); if ((await p.$$("#app .tbtn")).length < 15) throw new Error("guide list too short");
+  await go("#guide/particles"); const gq = await ev(() => GUIDE.find(g => g.id === "particles").check.map(c => c[1]));
+  for (let k = 0; k < gq.length; k++) await p.click(`.opt[data-q="${k}"][data-o="${gq[k]}"]`);
+  if (!(await ev(() => S.guide.particles && S.guide.particles.best === 3))) throw new Error("guide check not recorded");
+  await shot("05b-guide");
+  await go("#drills/sent/read"); await p.waitForFunction(() => DR && DR.name === "sent");
+  const rb = await p.$(".sentence ruby"); if (rb) { await rb.click(); if (!(await ev(() => !!document.querySelector(".sentence ruby.show")))) throw new Error("tap-to-reveal furigana"); }
+  await p.keyboard.press(" "); await p.click('[data-act=sgrade][data-g="2"]'); await shot("05c-sentence");
+  await go("#drills/write/words"); await p.waitForFunction(() => DR && DR.name === "write");
+  const wchars = await ev(() => DR.chars);
+  for (const c of wchars) { await write(c); await p.waitForTimeout(500); }
+  if (!(await ev(() => DR.done && DR.ok))) throw new Error("word writing drill failed for " + wchars.join(""));
+  await shot("05d-write-word");
+  const exN = await ev(() => ORDER.vocab[5].filter(id => EXAMPLES[ITEMS[id].w + "|" + ITEMS[id].r]).length);
+  if (exN < 400) throw new Error("too few N5 example sentences: " + exN);
+  log(`guide, sentence reading (furigana tap), word writing (${wchars.join("")}) OK; N5 words with examples: ${exN}`);
 
   // 5. drills
   await go("#drills"); await shot("06-drills");
@@ -98,7 +135,7 @@ const errs = [];
   await go("#drills/read"); await go("#drills/read/0");
   const qs = await ev(() => DR.qs.map(q => q.a)); for (let k = 0; k < qs.length; k++) await p.click(`.opt[data-q="${k}"][data-o="${qs[k]}"]`);
   await p.click("[data-act=ren]"); await shot("10-reading");
-  const dr = await ev(() => S.drills); for (const k of ["conj", "num", "dict", "order", "kana", "read"]) if (!dr[k] || !dr[k].n) throw new Error("drill not logged " + k);
+  const dr = await ev(() => S.drills); for (const k of ["conj", "num", "dict", "order", "kana", "read", "write", "sent"]) if (!dr[k] || !dr[k].n) throw new Error("drill not logged " + k);
   log("all 6 drills OK " + JSON.stringify(Object.fromEntries(Object.entries(dr).filter(([k]) => k !== "conjOpt").map(([k, v]) => [k, `${v.ok}/${v.n}`]))));
 
   // 6. tests

@@ -50,7 +50,7 @@ const nextMonday = s => { const d = parseD(s); while (d.getDay() !== 1) d.setDat
 
 // ---------- content model ----------
 const ITEMS = {};
-const ORDER = { kana: {}, vocab: {}, kanji: {}, grammar: {} };
+const ORDER = { kana: {}, vocab: {}, kanji: {}, grammar: {}, write: {} };
 LEVELS.forEach(l => Object.values(ORDER).forEach(o => (o[l] = [])));
 const spread = (i, n, r) => r.from + Math.floor((i * (r.to - r.from + 1)) / Math.max(1, n));
 const add = (it, lv) => { it.lv = lv; ITEMS[it.id] = it; ORDER[it.type][lv].push(it.id); };
@@ -79,6 +79,11 @@ GRAMMAR.forEach((g, i) => add(Object.assign({ id: `g:${g.p}`, type: "grammar", n
     add({ id: `g${lv}:${p}`, type: "grammar", n_: i + 1, p, m, n: "", ex: [[jp, en]], q: [[jp.replace(key, "＿＿"), key, d, en]] }, lv);
   });
 });
+ORDER.grammar[4].forEach(id => { const it = ITEMS[id]; if (N4_NOTES[it.p]) it.n = N4_NOTES[it.p]; });
+// writing cards: single kana and N5/N4 kanji that have stroke data
+ORDER.kana[5].forEach(id => { const k = ITEMS[id]; if (k.ch.length === 1 && STROKES[k.ch]) add({ id: `w:${k.ch}`, type: "write", ch: k.ch, src: id }, 5); });
+[5, 4].forEach(l => ORDER.kanji[l].forEach(id => { const k = ITEMS[id]; if (STROKES[k.k]) add({ id: `w:${k.k}`, type: "write", ch: k.k, src: id }, l); }));
+const writeOf = id => { const it = ITEMS[id]; return it && (it.type === "kana" || it.type === "kanji") ? ITEMS[`w:${it.ch || it.k}`] : null; };
 const KANJI_BY_CHAR = {}; Object.values(ITEMS).forEach(i => { if (i.type === "kanji") KANJI_BY_CHAR[i.k] = i; });
 const ALL = t => LEVELS.flatMap(l => ORDER[t][l]);
 const VOCAB_BY_READING = {}; ALL("vocab").forEach(id => { const i = ITEMS[id]; (VOCAB_BY_READING[i.r] = VOCAB_BY_READING[i.r] || []).push(i); });
@@ -95,14 +100,14 @@ const vMain = it => { // show kana if the word uses kanji beyond its own level (
   return [...it.w].filter(c => HAS_KANJI.test(c)).every(c => kanjiKnownUpTo(c, it.lv)) ? it.w : it.r;
 };
 const vKanjiTestable = it => HAS_KANJI.test(it.w) && it.w !== it.r && [...it.w].filter(c => HAS_KANJI.test(c)).every(c => kanjiKnownUpTo(c, it.lv));
-const TYPE_LABEL = { kana: "Kana", vocab: "Vocab", kanji: "Kanji", grammar: "Grammar" };
+const TYPE_LABEL = { kana: "Kana", vocab: "Vocab", kanji: "Kanji", grammar: "Grammar", write: "Writing" };
 const BATCH = { vocab: 8, kanji: 3, grammar: 2 };
 const TYPES = ["kana", "vocab", "kanji", "grammar"];
 
 // ---------- state ----------
 const KEY = "n5dojo.v1";
-const DEFAULTS = () => ({ v: 2, settings: { level: 5, start: "2026-11-30", exam: "2027-07-04", tts: true, rate: 0.85, production: false, retention: 0.9, theme: "auto" },
-  cards: {}, log: {}, tests: [], tasks: {}, drills: {}, read: {}, history: [], lastExport: null, created: today() });
+const DEFAULTS = () => ({ v: 2, settings: { level: 5, start: "2026-11-30", exam: "2027-07-04", tts: true, rate: 0.85, production: false, retention: 0.9, theme: "auto", writing: true, furi: false },
+  cards: {}, log: {}, tests: [], tasks: {}, drills: {}, read: {}, guide: {}, history: [], lastExport: null, created: today() });
 let S;
 function migrate(s) {
   const d = DEFAULTS();
@@ -126,6 +131,12 @@ function save() {
   catch (e) { if (!saveWarned) { saveWarned = true; alert("Could not save progress in this browser (storage blocked). Use Settings → Export often."); } }
 }
 S = load();
+function backfillWriting() { // writing cards for kana/kanji learned before writing cards existed, spread over a week
+  if (S.settings.writing === false) return; let n = 0;
+  for (const id of Object.keys(S.cards)) { const w = writeOf(id); if (w && !S.cards[w.id]) { S.cards[w.id] = { due: addDays(today(), n++ % 7), ivl: 0, s: 0, d: 0, reps: 0, lapses: 0, last: 0, lastDay: null, added: today() }; } }
+  if (n) save();
+}
+backfillWriting();
 const applyTheme = () => { const t = S.settings.theme; if (t === "auto") document.documentElement.removeAttribute("data-theme"); else document.documentElement.setAttribute("data-theme", t); };
 applyTheme();
 
@@ -251,23 +262,19 @@ function animateStrokes(svg) {
 const strokeBox = ch => (STROKES[ch] ? `<div class="sbox">${strokeSVG(ch)}<div class="sbtns"><button class="btn ghost sm" data-act="play" data-ch="${esc(ch)}">&#9654; strokes (${STROKES[ch].length})</button><button class="btn ghost sm" data-act="pad" data-ch="${esc(ch)}">&#9998; write</button></div></div>` : "");
 function openPad(ch) {
   const ov = document.createElement("div"); ov.className = "overlay";
-  ov.innerHTML = `<div class="padwrap"><div class="spread"><b class="jp">${esc(ch)}</b><span class="small muted">Trace it, then hide the guide and write from memory</span></div>
-    <div class="pad"><div class="guide">${strokeSVG(ch)}</div><canvas width="600" height="600"></canvas></div>
-    <div class="bar center"><button class="btn ghost" data-p="guide">Hide guide</button><button class="btn ghost" data-p="clear">Clear</button><button class="btn ghost" data-p="anim">Show order</button><button class="btn" data-p="close">Done</button></div></div>`;
+  ov.innerHTML = `<div class="padwrap"><div class="spread"><b class="jp lg">${esc(ch)}</b><span class="small muted">${(STROKES[ch] || []).length} strokes · each stroke is checked</span></div><div class="wphost"></div>
+    <div class="bar center"><button class="btn ghost sm" data-p="trace">Trace</button><button class="btn ghost sm" data-p="memory">From memory</button><button class="btn ghost sm" data-p="anim">Show order</button><button class="btn sm" data-p="close">Done</button></div></div>`;
   document.body.appendChild(ov);
-  const cv = $("canvas", ov), ctx = cv.getContext("2d"); let drawing = false;
-  ctx.lineWidth = 22; ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.strokeStyle = getComputedStyle(document.body).color || "#222";
-  const pos = e => { const r = cv.getBoundingClientRect(); return [((e.clientX - r.left) * cv.width) / r.width, ((e.clientY - r.top) * cv.height) / r.height]; };
-  cv.addEventListener("pointerdown", e => { drawing = true; cv.setPointerCapture(e.pointerId); const [x, y] = pos(e); ctx.beginPath(); ctx.moveTo(x, y); e.preventDefault(); });
-  cv.addEventListener("pointermove", e => { if (!drawing) return; const [x, y] = pos(e); ctx.lineTo(x, y); ctx.stroke(); e.preventDefault(); });
-  cv.addEventListener("pointerup", () => (drawing = false));
+  const host = $(".wphost", ov); let guide = true, w;
+  const start = () => (w = new Writer(host, ch, { guide, onDone: r => drillLog("write", r.grade >= 2) }));
+  start();
   ov.addEventListener("click", e => {
     const b = e.target.closest("[data-p]"); if (!b) { if (e.target === ov) ov.remove(); return; }
     const p = b.dataset.p;
     if (p === "close") ov.remove();
-    if (p === "clear") ctx.clearRect(0, 0, cv.width, cv.height);
-    if (p === "guide") { const g = $(".guide", ov); g.classList.toggle("off"); b.textContent = g.classList.contains("off") ? "Show guide" : "Hide guide"; }
-    if (p === "anim") { $(".guide", ov).classList.remove("off"); animateStrokes($(".guide svg", ov)); }
+    if (p === "trace") { guide = true; start(); }
+    if (p === "memory") { guide = false; start(); }
+    if (p === "anim") { w.showAll(); animateStrokes($(".outline", host)); }
   });
 }
 
@@ -288,14 +295,15 @@ const go = h => { if (location.hash === h) render(); else location.hash = h; };
 document.addEventListener("click", e => {
   const s = e.target.closest("[data-say]"); if (s) { e.preventDefault(); speak(s.dataset.say); return; }
   const a = e.target.closest("[data-act]"); if (a && ACTS[a.dataset.act]) { e.preventDefault(); ACTS[a.dataset.act](a.dataset, a); return; }
-  const sv = e.target.closest("svg.strk"); if (sv && !sv.closest(".pad")) animateStrokes(sv);
+  const rb = e.target.closest(".furi-tap ruby"); if (rb) { rb.classList.toggle("show"); return; }
+  const sv = e.target.closest("svg.strk"); if (sv && !sv.closest(".wpad")) animateStrokes(sv);
 });
 document.addEventListener("change", e => { const t = e.target; if (t.matches("[data-task]")) { S.tasks[t.dataset.task] = t.checked; save(); } });
 ACTS.play = d => animateStrokes($(`svg.strk[data-ch="${CSS.escape(d.ch)}"]`));
 ACTS.pad = d => openPad(d.ch);
 
 // ---- Today ----
-const DRILL_OF_DAY = [["conj", "Conjugation"], ["num", "Numbers & time"], ["dict", "Dictation"], ["order", "Sentence order"], ["read", "Reading"], ["kana", "Kana look-alikes"]];
+const DRILL_OF_DAY = [["write", "Writing"], ["sent", "Sentence reading"], ["conj", "Conjugation"], ["write/words", "Write words"], ["num", "Numbers & time"], ["sent/listen", "Listening sentences"], ["dict", "Dictation"], ["order", "Sentence order"], ["read", "Reading passages"], ["kana", "Kana look-alikes"]];
 VIEWS.today = () => {
   const w = weekNo(), tw = totalWeeks(), ph = phaseOf(w), dl = daysToExam(), due = dueIds().length, lv = L();
   const Lg = S.log[today()] || { r: 0, ok: 0, n: 0, sec: 0 };
@@ -326,7 +334,9 @@ VIEWS.today = () => {
     ${gapN ? `<div class="row gap"><span class="tag">Foundation</span><span><b>${gapN}</b> items from easier levels not learned yet</span><span class="sp"></span><a class="btn ghost" href="#gaps">Fill gaps</a></div>` : ""}</section>
   <section class="card"><h2>3 · Practice <span class="muted small">~5–10 min</span></h2>
     <div class="row"><span>Drill of the day: <b>${dd[1]}</b></span><span class="sp"></span><a class="btn" href="#drills/${dd[0]}">Start</a></div>
-    <div class="small muted">More in the <a href="#drills">Drills</a> tab: conjugation, numbers & time, dictation, sentence order, reading, kana look-alikes.</div></section>
+    <div class="row"><span>Handwriting: <b>write 5 characters from memory</b></span><span class="sp"></span><a class="btn ghost" href="#drills/write">Write</a></div>
+    ${nextLesson() ? `<div class="row"><span>Next lesson: <b>${esc(nextLesson().t)}</b></span><span class="sp"></span><a class="btn ghost" href="#guide/${nextLesson().id}">Read</a></div>` : ""}
+    <div class="small muted">More in <a href="#drills">Drills</a> (writing, sentences, conjugation, numbers, dictation…) and the <a href="#guide">Guide</a>.</div></section>
   <section class="card"><h2>4 · This week's tasks</h2>${weekTasksHTML(Math.max(1, w))}</section>`;
 };
 VIEWS.gaps = () => {
@@ -366,12 +376,12 @@ VIEWS.lesson = () => {
   const t = ITEMS[LESSON[0]].type; let body = "";
   if (t === "kana") {
     const it0 = ITEMS[LESSON[0]];
-    body = `<p class="muted">${esc(it0.gname)} · ${it0.script === "h" ? "Hiragana" : "Katakana"}. Tap a character to replay its stroke order, or press ✎ to practise writing. Say each one aloud. Mnemonics: ${it0.script === "h" ? `<a href="${href(F.tofugu)}" target="_blank">Tofugu guide</a>` : `<a href="${href(F.booklet)}" target="_blank">kana booklet</a>`}.</p>
-      <div class="kgrid big">${LESSON.map(id => { const i = ITEMS[id]; return `<div class="kcell">${STROKES[i.ch] ? strokeSVG(i.ch) : `<div class="jp xl">${i.ch}</div>`}<div><b>${i.r}</b> ${sayBtn(i.ch)}${STROKES[i.ch] ? ` <button class="say" data-act="pad" data-ch="${esc(i.ch)}" title="Practise writing">&#9998;</button>` : ""}</div></div>`; }).join("")}</div>
+    body = `<p class="muted">${esc(it0.gname)} · ${it0.script === "h" ? "Hiragana" : "Katakana"}. Tap a character to replay its stroke order. Say each one aloud, then trace it once. More mnemonics: ${it0.script === "h" ? `<a href="${href(F.tofugu)}" target="_blank">Tofugu guide</a>` : `<a href="${href(F.booklet)}" target="_blank">kana booklet</a>`}.</p>
+      ${LESSON.map(id => { const i = ITEMS[id]; return `<div class="krow">${STROKES[i.ch] ? strokeSVG(i.ch) : `<div class="jp xl kbig">${i.ch}</div>`}<div><div class="jp lg"><b>${i.ch}</b> = <b>${i.r}</b> ${sayBtn(i.ch)}${STROKES[i.ch] ? ` <button class="btn ghost sm" data-act="pad" data-ch="${esc(i.ch)}">&#9998; practise writing</button>` : ""}</div><div class="small muted">${esc(mnemo(i.ch))}</div></div></div>`; }).join("")}
       ${KANA_NOTES[it0.grp] ? `<div class="note">${esc(KANA_NOTES[it0.grp])}</div>` : ""}`;
   } else if (t === "vocab") {
     body = LESSON.map(id => { const i = ITEMS[id]; const m = vMain(i);
-      return `<div class="lrow"><div class="jp lg">${esc(m)} ${sayBtn(i.r)} <span class="tag">N${i.lv}</span></div><div class="jp">${m !== i.r ? esc(i.r) : ""}${m !== i.w ? ` <span class="muted">(${esc(i.w)})</span>` : ""}</div><div>${esc(i.e)}</div>${kanjiBreak(i.w)}</div>`; }).join("");
+      return `<div class="lrow"><div class="jp lg">${esc(m)} ${sayBtn(i.r)} <span class="tag">N${i.lv}</span></div><div class="jp">${m !== i.r ? esc(i.r) : ""}${m !== i.w ? ` <span class="muted">(${esc(i.w)})</span>` : ""}</div><div>${esc(i.e)}</div>${kanjiBreak(i.w)}${exampleHTML(i)}</div>`; }).join("");
   } else if (t === "kanji") {
     body = LESSON.map(id => kanjiCard(ITEMS[id], true)).join("") + (ITEMS[LESSON[0]].lv === 5 ? `<p class="muted">Also study these in the <a href="${href(F.kb)}" target="_blank">kanji book</a>.</p>` : "");
   } else body = LESSON.map(id => grammarCard(ITEMS[id], true)).join("");
@@ -379,7 +389,11 @@ VIEWS.lesson = () => {
     <div class="bar"><button class="btn big" data-act="lessonDone">I've studied these. Quiz me</button><a class="btn ghost" href="#today">Later</a></div></section>`;
   $$("#app svg.strk").forEach((s, i) => setTimeout(() => animateStrokes(s), 200 + i * 150));
 };
-ACTS.lessonDone = () => { LESSON.forEach(introduce); save(); startSession(LESSON.slice(), "learn"); LESSON = []; };
+ACTS.lessonDone = () => { const ids = LESSON.slice(); if (S.settings.writing !== false) LESSON.forEach(id => { const w = writeOf(id); if (w) ids.push(w.id); }); ids.forEach(introduce); save(); startSession(ids, "learn"); LESSON = []; };
+function exampleHTML(i) {
+  const ex = EXAMPLES[`${i.w}|${i.r}`]; if (!ex) return "";
+  return `<div class="exs">${ex.map(([fu, en]) => `<div><span class="jp ${S.settings.furi ? "" : "furi-tap"}">${ruby(fu)}</span> ${sayBtn(plainJa(fu))}<div class="small muted">${esc(en)}</div></div>`).join("")}</div>`;
+}
 function kanjiBreak(w) {
   const ks = [...new Set([...w].filter(c => KANJI_BY_CHAR[c]))];
   return ks.length ? `<div class="small muted">${ks.map(c => `<a href="#kanji/${encodeURIComponent(c)}" class="jp">${c}</a> = ${esc(KANJI_BY_CHAR[c].m)}`).join(" · ")}</div>` : "";
@@ -388,6 +402,7 @@ function kanjiCard(i, strokes) {
   const ex = kanjiExample(i);
   return `<div class="lrow kanji">${strokes && STROKES[i.k] ? strokeBox(i.k) : `<div class="jp xxl">${i.k}</div>`}<div><div><span class="jp lg">${i.k}</span> <b>${esc(i.m)}</b> <span class="tag">N${i.lv}</span></div>
    <div class="small"><span class="muted">on</span> <span class="jp">${esc(i.on)}</span> · <span class="muted">kun</span> <span class="jp">${esc(i.kun)}</span>${i.strokes ? ` · <span class="muted">${i.strokes} strokes</span>` : ""}</div>
+   ${PARTS[i.k] ? `<div class="small"><span class="muted">parts</span> <span class="jp">${PARTS[i.k].map(esc).join(" + ")}</span></div>` : ""}
    ${ex ? `<div class="jp">${esc(ex.w)} 【${esc(ex.r)}】 ${sayBtn(ex.r)} <span class="muted">${esc(ex.e)}</span></div>` : ""}</div></div>`;
 }
 function grammarCard(i, full) {
@@ -404,7 +419,7 @@ ACTS.reviewIds = d => startSession(d.ids.split(",").filter(id => S.cards[id]), "
 function startSession(ids, mode) {
   if (!ids.length) return go("#today");
   const sorted = ids.slice().sort((a, b) => (S.cards[a].due < S.cards[b].due ? -1 : 1)).slice(0, 200); // most overdue first
-  SES = { q: shuffle(sorted), total: sorted.length, done: 0, ok: 0, miss: new Set(), mode, state: "front", rev: false };
+  SES = { q: mode === "learn" ? sorted : shuffle(sorted), total: sorted.length, done: 0, ok: 0, miss: new Set(), mode, state: "front", rev: false };
   lastAct = Date.now(); go("#session");
 }
 VIEWS.session = () => {
@@ -423,28 +438,46 @@ VIEWS.session = () => {
   if (it.type === "kana") {
     front = `<div class="jp huge">${it.ch}</div>`;
     if (SES.state === "front") ctrl = `<input id="kin" class="kin" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="type romaji, Enter">`;
-    else back = `<div class="ans ${SES.lastOk ? "ok" : "bad"}">${it.r}${it.ans.length > 1 ? ` <span class="muted small">(also ${it.ans.slice(1).join(", ")})</span>` : ""}</div>${strokeBox(it.ch)}`;
+    else back = `<div class="ans ${SES.lastOk ? "ok" : "bad"}">${it.r}${it.ans.length > 1 ? ` <span class="muted small">(also ${it.ans.slice(1).join(", ")})</span>` : ""}</div><div class="small muted">${esc(mnemo(it.ch))}</div>${strokeBox(it.ch)}`;
   } else if (it.type === "vocab") {
     if (SES.state === "front") SES.rev = S.settings.production && c.ivl >= 7 && Math.random() < 0.5;
     front = SES.rev ? `<div class="big-en">${esc(it.e)}</div><div class="muted small">Say the Japanese word</div>` : `<div class="jp huge2">${esc(vMain(it))}</div>`;
-    if (SES.state === "back") back = `<div class="jp lg">${esc(it.w)}${it.w !== it.r ? `【${esc(it.r)}】` : ""} ${sayBtn(it.r)}</div><div class="big-en">${esc(it.e)}</div>${kanjiBreak(it.w)}`;
+    if (SES.state === "back") back = `<div class="jp lg">${esc(it.w)}${it.w !== it.r ? `【${esc(it.r)}】` : ""} ${sayBtn(it.r)}</div><div class="big-en">${esc(it.e)}</div>${kanjiBreak(it.w)}${exampleHTML(it)}`;
   } else if (it.type === "kanji") {
     front = `<div class="jp huge">${it.k}</div><div class="muted small">Meaning + one reading?</div>`;
     if (SES.state === "back") back = kanjiCard(it, true);
+  } else if (it.type === "write") {
+    front = writePrompt(it) + (SES.state === "front" ? `<div id="wpad" class="wphost"></div>` : `<div class="wphost">${strokeSVG(it.ch, "big")}</div><div class="wmsg small ${SES.wres.grade >= 3 ? "okt" : SES.wres.grade === 2 ? "midt" : "badt"}">${SES.wres.gave ? "Answer shown: write it a few times on paper" : SES.wres.misses ? `${SES.wres.misses} stroke miss${SES.wres.misses > 1 ? "es" : ""}${SES.wres.hinted ? ", hint used" : ""}` : "Perfect stroke order ✓"}</div>`);
+    if (SES.state === "back") back = writeInfo(it);
+    else ctrl = `<div class="bar center"><button class="btn ghost sm" data-act="whint">Hint next stroke</button><button class="btn ghost sm" data-act="wgive">Show answer</button></div>`;
   } else {
     if (SES.state === "front" || !SES.opts) { const q = it.q[0]; SES.opts = shuffle([q[1], ...q[2]]); SES.qa = q; }
     const q = SES.qa;
     front = `<div class="jp cloze">${clozeHTML(q[0])}</div><div class="muted">${esc(q[3] || "")}</div>` + optsHTML(SES.opts, q[1], SES.state === "back" ? SES.pickd : null, "gpick");
     if (SES.state === "back") back = grammarCard(it, true);
   }
-  const auto = it.type === "kana" || it.type === "grammar";
+  const auto = it.type === "kana" || it.type === "grammar" || it.type === "write";
   if (SES.state === "front" && !auto) ctrl = `<button class="btn big wide" data-act="flip">Show answer <span class="k">Space</span></button>`;
   if (SES.state === "back") ctrl += auto ? `<button class="btn big wide" data-act="next">Next <span class="k">Enter</span></button>`
     : `<div class="grades">${[[1, "Again"], [2, "Hard"], [3, "Good"], [4, "Easy"]].map(([g, l]) => `<button class="g g${g}" data-act="grade" data-g="${g}"><span>${l}</span><small>${ivlLabel(previewIvl(c, g))}</small></button>`).join("")}</div>`;
   app().innerHTML = `<section class="card session">${prog}<div class="front">${front}</div>${back ? `<div class="back">${back}</div>` : ""}<div class="ctrl">${ctrl}</div>
     <div class="bar"><a class="small muted" href="#today" data-act="endSession">End session</a></div></section>`;
   const kin = $("#kin"); if (kin) { kin.focus(); kin.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); kanaCheck(kin.value); } }); }
+  if (it.type === "write" && SES.state === "front") SES.writer = new Writer($("#wpad"), it.ch, { guide: c.reps === 0, onDone: r => { SES.wres = r; SES.state = "back"; speak(ITEMS[it.src].ch || ITEMS[it.src].k); setTimeout(() => { if (SES && SES.q[0] === id) render(); }, 700); } });
 };
+const mnemo = ch => { if (MNEMO[ch]) return MNEMO[ch]; const base = ch.normalize("NFD")[0]; return MNEMO[base] ? `${ch} = ${base} + voicing marks. ${MNEMO[base]}` : ""; };
+function writePrompt(it) {
+  const src = ITEMS[it.src];
+  if (src.type === "kana") return `<div class="muted small">Write the ${src.script === "h" ? "hiragana" : "katakana"} for</div><div class="big-en"><b>${esc(src.r)}</b> ${sayBtn(src.ch)}</div>`;
+  const ex = kanjiExample(src);
+  return `<div class="muted small">Write the kanji for</div><div class="big-en"><b>${esc(src.m)}</b></div><div class="small"><span class="jp">${esc(src.kun !== "—" ? src.kun : src.on)}</span>${ex ? ` · <span class="jp">${esc(ex.w.split(src.k).join("○"))}【${esc(ex.r)}】</span>` : ""}</div>`;
+}
+function writeInfo(it) {
+  const src = ITEMS[it.src];
+  return src.type === "kana" ? `<div class="jp lg">${src.ch} = ${src.r}</div><div class="small muted">${esc(mnemo(src.ch))}</div>${strokeBox(src.ch)}` : kanjiCard(src, true);
+}
+ACTS.whint = () => SES.writer && SES.writer.hint();
+ACTS.wgive = () => { SES.wres = { grade: 1, misses: 0, hinted: true, gave: true }; SES.state = "back"; render(); };
 const clozeHTML = s => esc(s).replace("＿＿", '<span class="blank">＿＿</span>');
 function optsHTML(opts, ans, picked, act) {
   return `<div class="opts">${opts.map((o, k) => { let cls = "";
@@ -455,19 +488,19 @@ function itemShort(i) { return i.type === "kana" ? i.ch : i.type === "vocab" ? v
 function kanaCheck(v) { const it = ITEMS[SES.q[0]]; const val = v.trim().toLowerCase(); if (!val) return; SES.lastOk = it.ans.includes(val); SES.state = "back"; speak(it.ch); render(); }
 ACTS.flip = () => { SES.state = "back"; const it = ITEMS[SES.q[0]]; if (it.type === "vocab" && SES.rev) speak(it.r); render(); };
 ACTS.gpick = d => { const q = SES.qa; SES.pickd = d.o; SES.lastOk = d.o === q[1]; SES.state = "back"; render(); };
-ACTS.next = () => answer(SES.lastOk ? 3 : 1);
+ACTS.next = () => answer(SES.wres ? SES.wres.grade : SES.lastOk ? 3 : 1);
 ACTS.grade = d => answer(+d.g);
 ACTS.endSession = () => { SES = null; go("#today"); };
 function answer(g) {
   const id = SES.q.shift(); grade(id, g); SES.done++;
   if (g === 1) { SES.miss.add(id); SES.q.splice(Math.min(SES.q.length, 3 + Math.floor(Math.random() * 3)), 0, id); }
   else if (!SES.miss.has(id)) SES.ok++;
-  SES.state = "front"; SES.opts = null; SES.pickd = null; render();
+  SES.state = "front"; SES.opts = null; SES.pickd = null; SES.wres = null; SES.writer = null; render();
 }
 document.addEventListener("keydown", e => {
   if (location.hash !== "#session" || !SES || e.target.matches("input,textarea")) return;
   const it = SES.q.length && ITEMS[SES.q[0]]; if (!it) return;
-  const auto = it.type === "kana" || it.type === "grammar";
+  const auto = it.type === "kana" || it.type === "grammar" || it.type === "write";
   if (SES.state === "front") {
     if (it.type === "grammar" && /^[1-4]$/.test(e.key)) { const o = SES.opts[+e.key - 1]; if (o) ACTS.gpick({ o }); }
     else if ((e.key === " " || e.key === "Enter") && !auto) { e.preventDefault(); ACTS.flip(); }
@@ -524,6 +557,8 @@ VIEWS.kana = ch => {
 
 // ---- Drills ----
 const DRILLS = {
+  write: ["Writing", "Handwrite kana, kanji and whole words from memory. Every stroke is checked for shape, direction and order."],
+  sent: ["Sentence reading", "Thousands of real sentences (Tatoeba) that use only the kanji of your level, with tap-to-show furigana and audio."],
   conj: ["Conjugation", "Type verb and adjective forms. Builds the grammar foundation for every level."],
   num: ["Numbers, time & counters", "Prices, clock times, dates and counters, with the tricky sound changes. Listening mode makes you type what you hear."],
   dict: ["Dictation", "Hear a word and type it in kana. Trains your ear and spelling."],
@@ -725,6 +760,103 @@ document.addEventListener("keydown", e => {
   if (DR.name === "kana" && DR.mode === "mc" && DR.opts[+e.key - 1]) ACTS.kpick({ o: DR.opts[+e.key - 1] });
 });
 
+// writing practice
+function writeQuestion(mode) {
+  const known = t => ALL(t).filter(id => S.cards[id]).map(id => ITEMS[id]);
+  if (mode === "kana") {
+    let pool = known("kana").filter(i => i.ch.length === 1 && STROKES[i.ch]);
+    if (pool.length < 5) pool = ORDER.kana[5].map(id => ITEMS[id]).filter(i => i.script === "h" && i.ch.length === 1);
+    const it = rnd(pool);
+    return { chars: [it.ch], prompt: `<div class="muted small">Write the ${it.script === "h" ? "hiragana" : "katakana"} for</div><div class="big-en"><b>${it.r}</b> ${sayBtn(it.ch)}</div>`, say: it.ch, answer: it.ch, info: mnemo(it.ch) };
+  }
+  if (mode === "kanji") {
+    let pool = known("kanji").filter(i => STROKES[i.k]);
+    if (pool.length < 5) pool = (ORDER.kanji[L() <= 4 ? 4 : 5]).map(id => ITEMS[id]).filter(i => STROKES[i.k]);
+    const it = rnd(pool);
+    return { chars: [it.k], prompt: writePrompt({ src: it.id }), say: (kanjiExample(it) || {}).r || it.k, answer: it.k, info: `${it.m} · ${it.on} · ${it.kun}` };
+  }
+  const ok = w => [...w].every(c => STROKES[c]);
+  let pool = known("vocab").filter(i => ok(vMain(i)) && vMain(i).length <= 5);
+  if (pool.length < 10) pool = ORDER.vocab[L() <= 4 ? 4 : 5].map(id => ITEMS[id]).filter(i => ok(vMain(i)) && vMain(i).length <= 5);
+  const it = rnd(pool), word = vMain(it);
+  return { chars: [...word], prompt: `<div class="muted small">Write the word</div><div class="big-en"><b>${esc(it.e)}</b></div><div class="jp">${esc(it.r)} ${sayBtn(it.r)}</div>`, say: it.r, answer: word, info: word !== it.r ? `${word} 【${it.r}】` : "" };
+}
+DRILL_VIEWS.write = mode => {
+  mode = ["kana", "kanji", "words"].includes(mode) ? mode : ALL("kanji").filter(id => S.cards[id]).length >= 5 ? "kanji" : "kana";
+  const guide = !!S.drills.writeGuide;
+  if (!DR || DR.name !== "write" || DR.mode !== mode) DR = Object.assign({ name: "write", mode, k: 0, res: [] }, writeQuestion(mode));
+  const q = DR;
+  const tabs = `<div class="pills">${[["kana", "Kana"], ["kanji", "Kanji"], ["words", "Words"]].map(([m, l]) => `<a class="pill ${m === mode ? "on" : ""}" href="#drills/write/${m}">${l}</a>`).join("")}
+    <label class="chk small"><input type="checkbox" id="wguide" ${guide ? "checked" : ""}> trace mode (show guide)</label></div>`;
+  const progress = q.chars.length > 1 ? `<div class="wword jp">${q.chars.map((c, i) => `<span class="${i < q.k ? "wdone" : i === q.k && !q.done ? "wcur" : ""}">${i < q.k ? esc(c) : "＿"}</span>`).join("")}</div>` : "";
+  const misses = q.res.reduce((a, r) => a + r.misses, 0), hinted = q.res.some(r => r.hinted);
+  drillShell("write", `<div class="front">${q.prompt}${progress}</div>
+    ${q.done ? resultHTML(q.ok, `<span class="jp">${esc(q.answer)}</span> ${sayBtn(q.say)}`, `<div class="wfinal">${q.chars.map(c => strokeSVG(c)).join("")}</div><div class="small muted">${misses ? `${misses} stroke miss${misses > 1 ? "es" : ""}${hinted ? ", hint used" : ""}` : "Every stroke correct ✓"}${q.info ? " · " + esc(q.info) : ""}</div>`)
+      : `<div id="wpad" class="wphost"></div><div class="bar center"><button class="btn ghost sm" data-act="dwhint">Hint next stroke</button><button class="btn ghost sm" data-act="dwskip">Show answer</button></div>`}`, tabs);
+  $("#wguide").addEventListener("change", e => { S.drills.writeGuide = e.target.checked; save(); DR = null; render(); });
+  if (!q.done) DR.writer = new Writer($("#wpad"), q.chars[q.k], { guide, onDone: r => {
+    q.res.push(r); q.k++;
+    if (q.k >= q.chars.length) { q.done = true; q.ok = q.res.every(x => x.grade >= 2); drillLog("write", q.ok); speak(q.say); }
+    setTimeout(() => { if (DR === q) render(); }, 450);
+  } });
+};
+ACTS.dwhint = () => DR && DR.writer && DR.writer.hint();
+ACTS.dwskip = () => { const q = DR; q.res.push({ grade: 1, misses: 0, hinted: true }); q.done = true; q.ok = false; drillLog("write", false); render(); };
+
+// sentence reading
+DRILL_VIEWS.sent = mode => {
+  mode = mode === "listen" && canSpeak() ? "listen" : "read";
+  if (!DR || DR.name !== "sent" || DR.mode !== mode) {
+    const pool = (L() === 5 ? [5] : [5, 4]).flatMap(l => SENTENCES[l] || []); const x = rnd(pool);
+    DR = { name: "sent", mode, fu: x[0], en: x[1], shown: false };
+    if (mode === "listen") { const t = plainJa(x[0]); setTimeout(() => speak(t), 300); }
+  }
+  const q = DR, furi = S.settings.furi;
+  const tabs = `<div class="pills"><a class="pill ${mode === "read" ? "on" : ""}" href="#drills/sent/read">Read</a><a class="pill ${mode === "listen" ? "on" : ""}" href="#drills/sent/listen">${canSpeak() ? "Listen first" : "Listen (needs a Japanese voice)"}</a>
+    <label class="chk small"><input type="checkbox" id="sfuri" ${furi ? "checked" : ""}> show all furigana</label></div>`;
+  const text = `<div class="jp sentence ${furi ? "" : "furi-tap"}">${ruby(q.fu)}</div>`;
+  const front = mode === "listen" && !q.shown ? `<button class="btn big" data-say="${esc(plainJa(q.fu))}">&#9654; Play again</button><div class="muted small">What does it mean? Then reveal.</div>` : `${text}<div>${sayBtn(plainJa(q.fu))}</div>${furi ? "" : `<div class="muted small">Tap a kanji to see its reading.</div>`}`;
+  drillShell("sent", `<div class="front">${front}</div>
+    ${q.shown ? `<div class="back"><div class="big-en">${esc(q.en)}</div>${mode === "listen" ? "" : `<div class="jp small muted">${esc(readingOf(q.fu))}</div>`}</div>
+      <div class="grades three"><button class="g g1" data-act="sgrade" data-g="0"><span>Didn't get it</span></button><button class="g g2" data-act="sgrade" data-g="1"><span>Partly</span></button><button class="g g3" data-act="sgrade" data-g="2"><span>Understood</span></button></div>`
+      : `<button class="btn big wide" data-act="sshow">Show meaning <span class="k">Space</span></button>`}`, tabs);
+  $("#sfuri").addEventListener("change", e => { S.settings.furi = e.target.checked; save(); render(); });
+};
+ACTS.sshow = () => { DR.shown = true; render(); };
+ACTS.sgrade = d => { drillLog("sent", +d.g >= 1); DR = null; render(); };
+document.addEventListener("keydown", e => {
+  if (!DR || DR.name !== "sent" || e.target.matches("input,textarea")) return;
+  if (!DR.shown && (e.key === " " || e.key === "Enter")) { e.preventDefault(); ACTS.sshow(); }
+  else if (DR.shown && /^[1-3]$/.test(e.key)) ACTS.sgrade({ g: +e.key - 1 });
+});
+
+// ---- Guide ----
+const guideFor = lv => GUIDE.filter(g => g.lv === lv);
+const nextLesson = () => { const lvs = L() === 5 ? [5] : [5, 4]; return GUIDE.find(g => lvs.includes(g.lv) && !S.guide[g.id]); };
+VIEWS.guide = id => {
+  const g = GUIDE.find(x => x.id === id);
+  if (!g) {
+    app().innerHTML = `<section class="card"><h2>Guide</h2><p class="muted small">Short lessons that explain how Japanese works. Read them in order alongside your daily reviews; each ends with a quick check.</p>
+      ${[5, 4].map(l => `<h3>N${l}</h3><div class="tests">${guideFor(l).map(x => { const r = S.guide[x.id]; return `<a class="tbtn" href="#guide/${x.id}"><b>${esc(x.t)}</b>${r ? `<span class="small oktxt">done${x.check ? ` · ${r.best}/${x.check.length}` : ""}</span>` : `<span class="small">not read yet</span>`}</a>`; }).join("")}</div>`).join("")}</section>`;
+    return;
+  }
+  const qs = (g.check || []).map((c, k) => { if (!GQ[g.id + k]) GQ[g.id + k] = shuffle(c.slice(1)); return { q: c[0], a: c[1], opts: GQ[g.id + k] }; });
+  const picks = GP[g.id] || (GP[g.id] = {});
+  const all = qs.length && qs.every((x, k) => picks[k] !== undefined), score = qs.filter((x, k) => picks[k] === x.a).length;
+  const i = GUIDE.indexOf(g), nx = GUIDE[i + 1];
+  app().innerHTML = `<section class="card guide"><div class="spread small muted"><a href="#guide">← Guide</a><span class="tag">N${g.lv}</span></div><h2>${esc(g.t)}</h2>${g.body}
+    ${qs.length ? `<h3>Check</h3>${qs.map((x, k) => `<div class="rq"><div><b>Q${k + 1}.</b> ${esc(x.q)}</div>${optsHTML(x.opts, x.a, picks[k] ?? null, "gqpick").replace(/data-o=/g, `data-q="${k}" data-o=`)}</div>`).join("")}` : ""}
+    ${!qs.length || all ? `<div class="bar">${qs.length ? `<span class="ans ${score === qs.length ? "ok" : "bad"}">${score}/${qs.length}</span>` : ""}${!qs.length && !S.guide[g.id] ? `<button class="btn" data-act="gdone" data-id="${g.id}">Mark as read</button>` : ""}${nx ? `<a class="btn ${qs.length && !all ? "ghost" : ""}" href="#guide/${nx.id}">Next: ${esc(nx.t)}</a>` : ""}</div>` : ""}</section>`;
+};
+const GQ = {}, GP = {};
+ACTS.gqpick = (d, el) => {
+  const id = location.hash.split("/")[1], g = GUIDE.find(x => x.id === id); if (!g) return;
+  const picks = GP[id] || (GP[id] = {}); if (picks[+d.q] !== undefined) return; picks[+d.q] = d.o;
+  if (g.check.every((c, k) => picks[k] !== undefined)) { const sc = g.check.filter((c, k) => picks[k] === c[1]).length; const r = (S.guide[id] = S.guide[id] || { best: 0 }); r.best = Math.max(r.best, sc); logDay(); save(); }
+  const y = window.scrollY; render(); window.scrollTo(0, y);
+};
+ACTS.gdone = d => { S.guide[d.id] = { best: 0 }; save(); render(); };
+
 // ---- Tests ----
 let TEST = null;
 function distract(pool, correct, n, key) {
@@ -902,7 +1034,7 @@ ACTS.setLevel = d => {
 
 // ---- Stats ----
 VIEWS.stats = () => {
-  const rows = LEVELS.map(l => TYPES.filter(t => ORDER[t][l].length).map(t => {
+  const rows = LEVELS.map(l => [...TYPES, "write"].filter(t => ORDER[t][l].length).map(t => {
     const ids = ORDER[t][l], n = ids.length, i = introducedIn(ids).length, k = knownIn(ids).length, m = matureIn(ids).length;
     return `<tr><td>N${l}</td><td><span class="tag t-${t}">${TYPE_LABEL[t]}</span></td><td>${i}/${n}</td><td>${m}</td><td><span class="mbar stack"><span class="good" style="width:${pct(m, n)}%"></span><span class="mid" style="width:${pct(k - m, n)}%"></span><span class="low" style="width:${pct(i - k, n)}%"></span></span></td></tr>`;
   }).join("")).join("");
@@ -938,6 +1070,8 @@ VIEWS.settings = () => {
       <label>Theme <select name="theme">${["auto", "light", "dark"].map(t => `<option ${t === s.theme ? "selected" : ""}>${t}</option>`).join("")}</select></label>
       <label class="chk"><input type="checkbox" name="tts" ${s.tts ? "checked" : ""}> Japanese text-to-speech ${JA_VOICE ? `<span class="oktxt small">(voice: ${esc(JA_VOICE.name)})</span>` : `<span class="badtxt small">(no Japanese voice found)</span>`}</label>
       <label>Speech rate <input type="range" name="rate" min="0.6" max="1.2" step="0.05" value="${s.rate}"> <button type="button" class="btn ghost" data-say="にほんごを べんきょうしています。">Test</button></label>
+      <label class="chk"><input type="checkbox" name="writing" ${s.writing !== false ? "checked" : ""}> Writing cards: handwrite every kana and kanji you learn, checked stroke by stroke (strongly recommended)</label>
+      <label class="chk"><input type="checkbox" name="furi" ${s.furi ? "checked" : ""}> Always show furigana in example sentences (off = tap a word to see its reading)</label>
       <label class="chk"><input type="checkbox" name="production" ${s.production ? "checked" : ""}> Production mode: show English first on half of the mature vocab (turn on once basics are solid)</label>
       <button class="btn">Save settings</button>
     </form>
@@ -954,8 +1088,8 @@ VIEWS.settings = () => {
   f.addEventListener("submit", e => {
     e.preventDefault(); const fd = new FormData(f);
     if (!fd.get("start") || !fd.get("exam")) return alert("Both dates are required.");
-    Object.assign(S.settings, { level: +fd.get("level"), start: fd.get("start"), exam: fd.get("exam"), tts: !!fd.get("tts"), production: !!fd.get("production"), rate: +fd.get("rate"), retention: +fd.get("retention"), theme: fd.get("theme") });
-    save(); computeUnlocks(); applyTheme(); alert("Saved."); render();
+    Object.assign(S.settings, { level: +fd.get("level"), start: fd.get("start"), exam: fd.get("exam"), tts: !!fd.get("tts"), production: !!fd.get("production"), writing: !!fd.get("writing"), furi: !!fd.get("furi"), rate: +fd.get("rate"), retention: +fd.get("retention"), theme: fd.get("theme") });
+    save(); computeUnlocks(); applyTheme(); backfillWriting(); alert("Saved."); render();
   });
   $("#impFile").addEventListener("change", e => { const file = e.target.files[0]; if (!file) return; const r = new FileReader(); r.onload = () => doImport(r.result); r.readAsText(file); });
 };

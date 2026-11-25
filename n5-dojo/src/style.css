@@ -160,3 +160,29 @@ svg.strk{width:110px;height:110px;fill:none;stroke:var(--text);stroke-width:3.2;
 a.tbtn{text-decoration:none}
 .row.gap{border-top:1px dashed var(--line)}
 @media (max-width:520px){svg.strk{width:92px;height:92px}.lvrow{grid-template-columns:40px 1fr}.lvrow>div:last-child{grid-column:2}}
+/* v3: writing, furigana, guide */
+.wphost{margin:10px auto;width:100%;max-width:340px;align-self:center}
+.wpad{position:relative;width:100%;aspect-ratio:1;border:2px solid var(--line);border-radius:12px;background:var(--surface2);touch-action:none;overflow:hidden}
+.wpad .wl{position:absolute;inset:0;width:100%;height:100%;fill:none;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
+.wpad .outline{stroke:var(--line);stroke-width:5}
+.wpad .outline.hide{opacity:0}
+.wpad .ink{stroke:var(--text);stroke-width:4}
+.wpad .hint{stroke:var(--accent);stroke-width:5;opacity:.75}
+.wpad canvas{position:absolute;inset:0;width:100%;height:100%;touch-action:none;cursor:crosshair}
+.wcross{position:absolute;inset:0;pointer-events:none;background:linear-gradient(var(--line),var(--line)) center/100% 1px no-repeat,linear-gradient(var(--line),var(--line)) center/1px 100% no-repeat;opacity:.6}
+.wpad.shake{animation:shake .3s}
+@keyframes shake{25%{transform:translateX(-5px)}75%{transform:translateX(5px)}}
+.wmsg{min-height:20px;text-align:center;margin-top:6px}
+.okt{color:var(--ok)}.badt{color:var(--bad)}.midt{color:var(--mid)}
+svg.strk.big{width:200px;height:200px}
+.wword{font-size:30px;letter-spacing:6px;margin-top:8px}.wword .wcur{color:var(--accent);border-bottom:2px solid var(--accent)}.wword .wdone{color:var(--ok)}
+.wfinal{display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin:6px 0}.wfinal svg.strk{width:80px;height:80px}
+.krow{display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:center;padding:10px 0;border-top:1px solid var(--line)}
+.krow svg.strk{width:84px;height:84px}
+ruby rt{font-size:.55em;color:var(--muted)}
+.furi-tap rt{visibility:hidden}.furi-tap ruby{cursor:pointer;border-bottom:1px dotted var(--line)}.furi-tap ruby.show rt{visibility:visible}
+.sentence{font-size:26px;line-height:2.1;margin:6px 0}
+.exs{margin-top:8px;border-top:1px dashed var(--line);padding-top:6px;text-align:left}.exs .jp{font-size:18px;line-height:2}
+.grades.three{grid-template-columns:repeat(3,1fr)}
+.guide table{margin:8px 0}.guide .big-ex{font-size:22px;background:var(--surface2);padding:8px 12px;border-radius:8px}
+.guide li{margin:4px 0}

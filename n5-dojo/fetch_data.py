@@ -64,10 +64,40 @@ def strokes(chars):
     (OUT / "strokes.json").write_text(json.dumps(out, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     print("strokes:", len(out))
 
+def parts(chars):
+    """Top-level components of each kanji from KanjiVG (kvg:element of the root's direct child groups)."""
+    import xml.etree.ElementTree as ET
+    NS = "{http://kanjivg.tagaini.net}"
+    out = {}
+    for ch in chars:
+        svg = get(KVG_URL.format(ord(ch)))
+        if not svg:
+            continue
+        svg = re.sub(r"<!DOCTYPE.*?\]>", "", svg, flags=re.S)
+        svg = svg.replace('xmlns:kvg="https://kanjivg.tagaini.net/"', 'xmlns:kvg="http://kanjivg.tagaini.net"')
+        try:
+            root = ET.fromstring(svg)
+        except ET.ParseError:
+            continue
+        g = next((e for e in root.iter("{http://www.w3.org/2000/svg}g") if e.get(NS + "element") == ch), None)
+        if g is None:
+            continue
+        kids = [c.get(NS + "element") for c in g if c.tag.endswith("g") and c.get(NS + "element")]
+        kids = [k for k in kids if k and k != ch]
+        if len(kids) >= 2:
+            out[ch] = kids
+    (OUT / "parts.json").write_text(json.dumps(out, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    print("parts:", len(out))
+
 if __name__ == "__main__":
+    if sys.argv[1:] == ["parts"]:
+        rows = json.loads((OUT / "kanji_levels.json").read_text(encoding="utf-8"))
+        n5 = re.findall(r'^\["(.)"', (HERE / "src" / "data_kanji.js").read_text(encoding="utf-8"), re.M)
+        parts(n5 + [r[0] for r in rows if r[1] in (4, 3)])
+        sys.exit()
     rows = kanji()
     js = (HERE / "src" / "data_kana.js").read_text(encoding="utf-8")
     kana = sorted(set(c for c in re.findall(r'"([぀-ヿ])"', js)))
     n5 = re.findall(r'^\["(.)"', (HERE / "src" / "data_kanji.js").read_text(encoding="utf-8"), re.M)
     n4 = [r[0] for r in rows if r[1] == 4]
-    strokes(kana + n5 + n4)
+    strokes(kana + list("ぁぃぅぇぉゃゅょっゎァィゥェォャュョッヮヴー") + n5 + n4)

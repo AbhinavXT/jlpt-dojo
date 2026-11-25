@@ -39,12 +39,14 @@ def main():
     data = "const VOCAB = " + dumps(vocab) + ";\n"
     data += "const KANJI_UP = " + (SRC / "data" / "kanji_levels.json").read_text(encoding="utf-8") + ";\n"
     data += "const STROKES = " + (SRC / "data" / "strokes.json").read_text(encoding="utf-8") + ";\n"
+    for const, name in [("EXAMPLES", "examples.json"), ("SENTENCES", "sentences.json"), ("PARTS", "parts.json")]:
+        data += f"const {const} = " + (SRC / "data" / name).read_text(encoding="utf-8") + ";\n"
     for name in ["core.js", "data_kana.js", "data_kanji.js", "data_grammar.js", "data_grammar_up.js", "data_words.js",
-                 "data_reading.js", "data_order.js", "curriculum.js"]:
+                 "data_reading.js", "data_order.js", "data_mnemonics.js", "data_guide.js", "data_n4notes.js", "curriculum.js"]:
         data += (SRC / name).read_text(encoding="utf-8") + "\n"
     html = (SRC / "template.html").read_text(encoding="utf-8")
     for tag, content in [("/*CSS*/", (SRC / "style.css").read_text(encoding="utf-8")),
-                         ("/*DATA*/", data), ("/*APP*/", (SRC / "app.js").read_text(encoding="utf-8"))]:
+                         ("/*DATA*/", data), ("/*APP*/", (SRC / "writer.js").read_text(encoding="utf-8") + "\n" + (SRC / "app.js").read_text(encoding="utf-8"))]:
         assert "</script" not in content.lower() or tag == "/*CSS*/", tag
         html = html.replace(tag, content, 1)
     OUT.write_text(html, encoding="utf-8")
