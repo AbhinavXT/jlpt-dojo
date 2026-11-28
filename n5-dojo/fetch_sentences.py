@@ -155,6 +155,13 @@ def main():
         for lv in (5, 4):
             if max_level_ok(ja, lv) and (lv == 5 or not max_level_ok(ja, 5)) and len(graded[lv]) < 1500:
                 graded[lv].append([fu, en]); break
+    # starter pool for kana-stage learners: short everyday sentences, kana-only allowed, N5 kanji at most
+    graded["s"] = []
+    for rank, ja, fu, en in rows:
+        if 3 <= len(ja) <= 14 and max_level_ok(ja, 5) and not re.search(r"[0-9０-９A-Za-zＡ-Ｚａ-ｚ]", ja):
+            graded["s"].append([fu, en])
+            if len(graded["s"]) >= 2500:
+                break
     print("graded sentences", {k: len(v) for k, v in graded.items()})
     dump = lambda o: json.dumps(o, ensure_ascii=False, separators=(",", ":"))
     (OUT / "examples.json").write_text(dump(examples), encoding="utf-8")

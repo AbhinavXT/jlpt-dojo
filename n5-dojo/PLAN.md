@@ -62,6 +62,16 @@ Files used from this folder: Tofugu guide, the `jap/` writing sheets, flash card
 
 For N4 and above, the app generates a plan automatically: about 55% of the weeks for learning, then consolidation, then exam prep with official timings. Use the free sample questions on jlpt.jp and the 公式問題集 workbooks for official practice.
 
+## For new learners: everything adapts to what you know
+The app tracks which kana and kanji you've learned and only gives you material you can actually read and hear:
+- **Sentence reading** unlocks once enough sentences use only your kana. Furigana is always shown over kanji you haven't learned; for kanji you know, it's hidden and appears when you tap.
+- **Sentence listening** unlocks after your first 30 words. Until then you train your ear on the listening ladder.
+- **Dictation** and example sentences on cards follow the same rule. Examples that use unlearned kana are folded away.
+- **Listening ladder:** (1) kana sounds you've learned, (2) real words written only in those kana, (3) similar-sound pairs (おばさん/おばあさん, きて/きって). After the first kana row alone there are already about 30 real words (いえ, かお, えき, こえ…).
+- **Read kana words**, plus a **60-second kana sprint** with your personal best, to build reading speed.
+- **Survival phrases:** 40 greetings and classroom, shopping and travel phrases with audio and a quiz.
+- **Start here** card for the first days, a **daily checklist** (reviews · something new · a practice drill), kana progress counts, and a drill of the day chosen for your stage.
+
 ## Reading and writing: how the app builds them
 **Writing (the hard part):**
 - Every kana and N5/N4 kanji you learn creates a **writing card**. The first time you trace it over a faint guide; after that you write it from memory on the pad.

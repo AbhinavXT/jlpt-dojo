@@ -8,7 +8,7 @@ A self-contained, offline Japanese course: study materials, a 31-week N5 plan, l
 
 | Path | What |
 |---|---|
-| `n5-dojo.html` | The app (built file, ~1.7 MB): FSRS spaced repetition, kana/vocab/kanji/grammar for N5–N1, **handwriting cards graded stroke by stroke**, 8 drills, 20 Guide lessons, real example sentences with furigana, mocks per level, roadmap |
+| `n5-dojo.html` | The app (built file, ~1.7 MB): FSRS spaced repetition, kana/vocab/kanji/grammar for N5–N1, **handwriting cards graded stroke by stroke**, 11 drills that unlock as you learn (listening ladder, kana sprint, survival phrases…), 20 Guide lessons, real example sentences with furigana, mocks per level, roadmap |
 | `n5-dojo/PLAN.md` | Study plan: daily routine, N5 31-week plan, N4–N1 roadmap, methods, sources |
 | `n5-dojo/src/` | App source: `app.js`, `core.js` (FSRS, romaji→kana, conjugation, numbers), data files, styles |
 | `n5-dojo/tests/` | `unit.test.js` (engine + data integrity), `e2e.js` (Playwright walkthrough) |

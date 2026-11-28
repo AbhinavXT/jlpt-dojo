@@ -187,3 +187,10 @@ ruby rt{font-size:.55em;color:var(--muted)}
 .guide table{margin:8px 0}.guide .big-ex{font-size:22px;background:var(--surface2);padding:8px 12px;border-radius:8px}
 .guide li{margin:4px 0}
 .guide table{display:block;overflow-x:auto;max-width:100%}.guide td,.guide th{white-space:nowrap}
+/* v4: beginner flow */
+.adapt ruby.k rt{visibility:hidden}.adapt ruby.k{cursor:pointer;border-bottom:1px dotted var(--line)}.adapt ruby.k.show rt{visibility:visible}
+.checklist{margin-top:10px;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.chip{padding:2px 10px;border-radius:999px;background:var(--surface2);color:var(--muted)}.chip.on{background:color-mix(in srgb,var(--ok) 18%,var(--surface2));color:var(--ok)}
+.card.start{border-color:var(--accent)}
+ol.steps{padding-left:20px;margin:6px 0}ol.steps li{margin:8px 0}ol.steps li.done{color:var(--muted);text-decoration:line-through}ol.steps li.done a{color:var(--muted)}
+.tbtn.locked{opacity:.65}

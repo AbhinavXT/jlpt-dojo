@@ -101,8 +101,29 @@ const errs = [];
   for (let k = 0; k < gq.length; k++) await p.click(`.opt[data-q="${k}"][data-o="${gq[k]}"]`);
   if (!(await ev(() => S.guide.particles && S.guide.particles.best === 3))) throw new Error("guide check not recorded");
   await shot("05b-guide");
+  // stage gating: with only a few kana learned, sentence drills are locked and word drills use known kana only
+  await go("#drills/sent/read"); if (!(await p.textContent("#app")).includes("unlocks as you learn")) throw new Error("sentence drill should be locked for a beginner");
+  const words1 = await ev(() => readableWords().map(i => i.r)); const kana1 = await ev(() => [...knownSets().h]);
+  if (!words1.length || !words1.every(w => [...w].every(c => kana1.includes(c) || "ゃゅょっ".includes(c)))) throw new Error("readable words use unknown kana: " + words1.slice(0, 5));
+  await go("#drills/listen/sounds"); await p.waitForFunction(() => DR && DR.name === "listen");
+  const lopts = await ev(() => DR.opts); if (!lopts.every(o => kana1.includes(o))) throw new Error("listening options use unlearned kana " + lopts);
+  await p.click(`.opt[data-o="${await ev(() => DR.ans)}"]`); if (!(await ev(() => DR.ok))) throw new Error("listen sounds");
+  await go("#drills/kread/words"); await p.waitForFunction(() => DR && DR.name === "kread");
+  const kw = await ev(() => DR.it.r); await p.fill("#din", await ev(w => [...w].map(c => KANA_R[c] || c).join(""), kw)); await p.press("#din", "Enter");
+  if (!(await ev(() => DR.ok))) throw new Error("kana word reading judged wrong for " + kw);
+  await go("#drills/kread/speed"); await p.click("[data-act=sprint]");
+  for (let i = 0; i < 5; i++) { const a = await ev(() => DR.cur.ans[0]); await p.fill("#din", a); await p.waitForTimeout(30); }
+  const sprintN = await ev(() => DR.n); if (sprintN < 5) throw new Error("sprint counted " + sprintN);
+  await ev(() => { DR.end = Date.now() - 1; }); await p.waitForTimeout(400); if (!(await ev(() => S.drills.sprint && S.drills.sprint.best >= 5))) throw new Error("sprint best not saved");
+  await go("#drills/phrases/quiz"); await p.waitForFunction(() => DR && DR.name === "phrases"); await p.click(`.opt[data-o="${(await ev(() => DR.ans)).replace(/"/g, '\\"')}"]`);
+  await go("#drills/phrases/list"); await shot("05e-phrases");
+  log(`beginner stage OK: sentences locked, ${words1.length} readable words, listening ladder, kana words, sprint (${sprintN}), phrases`);
+  // learn all kana + 40 words, then sentence drills unlock
+  await ev(() => { [...ORDER.kana[5], ...ORDER.vocab[5].slice(0, 40)].forEach(id => { introduce(id); Object.assign(S.cards[id], { reps: 1, ivl: 2, s: 2, d: 5, lastDay: today(), due: addDays(today(), 2) }); }); save(); KS_KEY = ""; });
   await go("#drills/sent/read"); await p.waitForFunction(() => DR && DR.name === "sent");
-  const rb = await p.$(".sentence ruby"); if (rb) { await rb.click(); if (!(await ev(() => !!document.querySelector(".sentence ruby.show")))) throw new Error("tap-to-reveal furigana"); }
+  const furi = await ev(() => [...document.querySelectorAll(".sentence ruby")].map(r => ({ cls: r.className, vis: getComputedStyle(r.querySelector("rt")).visibility, k: [...r.childNodes][0].textContent })));
+  for (const f of furi) { const known = await ev(c => [...c].every(x => knownSets().kanji.has(x)), f.k); if ((f.cls === "k") !== known || (f.cls === "u" && f.vis !== "visible") || (f.cls === "k" && f.vis !== "hidden")) throw new Error("adaptive furigana wrong: " + JSON.stringify(f)); }
+  const rbk = await p.$(".sentence ruby.k"); if (rbk) { await rbk.click(); if (!(await ev(() => !!document.querySelector(".sentence ruby.k.show")))) throw new Error("tap-to-reveal furigana"); }
   await p.keyboard.press(" "); await p.click('[data-act=sgrade][data-g="2"]'); await shot("05c-sentence");
   await go("#drills/write/words"); await p.waitForFunction(() => DR && DR.name === "write");
   const wchars = await ev(() => DR.chars);
@@ -135,7 +156,7 @@ const errs = [];
   await go("#drills/read"); await go("#drills/read/0");
   const qs = await ev(() => DR.qs.map(q => q.a)); for (let k = 0; k < qs.length; k++) await p.click(`.opt[data-q="${k}"][data-o="${qs[k]}"]`);
   await p.click("[data-act=ren]"); await shot("10-reading");
-  const dr = await ev(() => S.drills); for (const k of ["conj", "num", "dict", "order", "kana", "read", "write", "sent"]) if (!dr[k] || !dr[k].n) throw new Error("drill not logged " + k);
+  const dr = await ev(() => S.drills); for (const k of ["conj", "num", "dict", "order", "kana", "read", "write", "sent", "listen", "kread", "phrases"]) if (!dr[k] || !dr[k].n) throw new Error("drill not logged " + k);
   log("all 6 drills OK " + JSON.stringify(Object.fromEntries(Object.entries(dr).filter(([k]) => k !== "conjOpt").map(([k, v]) => [k, `${v.ok}/${v.n}`]))));
 
   // 6. tests

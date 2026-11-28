@@ -231,6 +231,40 @@ function streak() {
   while (active(S.log[d])) { n++; d = addDays(d, -1); }
   return n;
 }
+// ---------- learner stage: only show what this learner can actually read / hear ----------
+let KS_CACHE = null, KS_KEY = "";
+function knownSets() {
+  const Lg = S.log[today()] || {}, key = Object.keys(S.cards).length + ":" + (Lg.r || 0) + ":" + (Lg.n || 0);
+  if (KS_CACHE && KS_KEY === key) return KS_CACHE;
+  const h = new Set(), k = new Set(), kanji = new Set(); let yoonH = false, yoonK = false;
+  for (const id of ORDER.kana[5]) {
+    const c = S.cards[id]; if (!c || !c.reps) continue; const it = ITEMS[id];
+    if (it.ch.length > 1) { if (it.script === "h") yoonH = true; else yoonK = true; } else (it.script === "h" ? h : k).add(it.ch);
+  }
+  for (const id of ALL("kanji")) { const c = S.cards[id]; if (c && c.reps) kanji.add(ITEMS[id].k); }
+  KS_KEY = key; POOLS = {}; return (KS_CACHE = { h, k, kanji, yoonH, yoonK });
+}
+let POOLS = {};
+const canHear = r => STAGE.readable(r, Object.assign({}, knownSets(), { kanji: new Set() })); // only known kana
+const vocabKnownN = () => ALL("vocab").filter(id => S.cards[id] && S.cards[id].reps).length;
+const kanaKnownN = () => { const ks = knownSets(); return ks.h.size + ks.k.size; };
+const beginner = () => kanaKnownN() < 80 || vocabKnownN() < 40;
+const bare = fu => readingOf(fu).replace(/[、。？！?!「」『』…\s]/g, "");
+function readableWords(max = 300) {
+  knownSets(); if (POOLS["w" + max]) return POOLS["w" + max];
+  const out = [];
+  for (const lv of [5, 4]) for (const id of ORDER.vocab[lv]) { const i = ITEMS[id]; if (/[～〜]/.test(i.r) || [...i.r].length < 2) continue; if (canHear(i.r)) out.push(i); if (out.length >= max) break; }
+  return (POOLS["w" + max] = out);
+}
+function sentencePool(listen) {
+  knownSets(); const key = "s" + (listen ? 1 : 0); if (POOLS[key]) return POOLS[key];
+  const nV = vocabKnownN(), maxLen = (nV < 50 ? 10 : nV < 200 ? 16 : nV < 500 ? 24 : 40) + (listen ? 0 : 6), seen = new Set();
+  const src = [...(SENTENCES.s || []), ...(SENTENCES[5] || []), ...(L() <= 4 ? SENTENCES[4] || [] : [])];
+  return (POOLS[key] = src.filter(x => { if (seen.has(x[0])) return false; seen.add(x[0]); const r = bare(x[0]); return [...r].length <= maxLen && canHear(r); }));
+}
+const adaptRuby = fu => (S.settings.furi ? `<span class="jp">${ruby(fu)}</span>` : `<span class="jp adapt">${ruby(fu, knownSets().kanji)}</span>`);
+const lockedNote = (what, n, unit) => `<div class="note"><b>${what} unlocks as you learn more kana.</b> It only uses ${unit} you can actually read and hear. Right now ${n} match what you know (${kanaKnownN()} kana, ${vocabKnownN()} words).
+  <div class="small">Build up to it with: <a href="#drills/listen">Listening ladder</a> · <a href="#drills/kread">Read kana words</a> · <a href="#drills/phrases">Survival phrases</a> · <a href="#today">today's kana lesson</a></div></div>`;
 const retrievNow = c => (c.lastDay && c.s ? FSRS.R(diffDays(c.lastDay, today()), c.s) : null);
 
 // ---------- TTS ----------
@@ -295,7 +329,7 @@ const go = h => { if (location.hash === h) render(); else location.hash = h; };
 document.addEventListener("click", e => {
   const s = e.target.closest("[data-say]"); if (s) { e.preventDefault(); speak(s.dataset.say); return; }
   const a = e.target.closest("[data-act]"); if (a && ACTS[a.dataset.act]) { e.preventDefault(); ACTS[a.dataset.act](a.dataset, a); return; }
-  const rb = e.target.closest(".furi-tap ruby"); if (rb) { rb.classList.toggle("show"); return; }
+  const rb = e.target.closest(".furi-tap ruby, .adapt ruby.k"); if (rb) { rb.classList.toggle("show"); return; }
   const sv = e.target.closest("svg.strk"); if (sv && !sv.closest(".wpad")) animateStrokes(sv);
 });
 document.addEventListener("change", e => { const t = e.target; if (t.matches("[data-task]")) { S.tasks[t.dataset.task] = t.checked; save(); } });
@@ -303,12 +337,20 @@ ACTS.play = d => animateStrokes($(`svg.strk[data-ch="${CSS.escape(d.ch)}"]`));
 ACTS.pad = d => openPad(d.ch);
 
 // ---- Today ----
+const DRILL_OF_DAY_BEGIN = [["listen/sounds", "Listening: kana sounds"], ["kread", "Read kana words"], ["write/kana", "Write kana from memory"], ["listen/words", "Listening: words"],
+  ["kana", "Kana look-alikes"], ["phrases", "Survival phrases"], ["kread/speed", "60-second kana sprint"], ["listen/pairs", "Listening: similar sounds"]];
 const DRILL_OF_DAY = [["write", "Writing"], ["sent", "Sentence reading"], ["conj", "Conjugation"], ["write/words", "Write words"], ["num", "Numbers & time"], ["sent/listen", "Listening sentences"], ["dict", "Dictation"], ["order", "Sentence order"], ["read", "Reading passages"], ["kana", "Kana look-alikes"]];
 VIEWS.today = () => {
   const w = weekNo(), tw = totalWeeks(), ph = phaseOf(w), dl = daysToExam(), due = dueIds().length, lv = L();
   const Lg = S.log[today()] || { r: 0, ok: 0, n: 0, sec: 0 };
   const newRows = TYPES.filter(t => curIds(t).length).map(t => {
     const f = fresh(t).length, a = ahead(t).length;
+    if (t === "kana" && a) {
+      const cnt = sc => [ORDER.kana[5].filter(id => ITEMS[id].script === sc && S.cards[id]).length, ORDER.kana[5].filter(id => ITEMS[id].script === sc).length];
+      const [hh, ht] = cnt("h"), [kh, kt] = cnt("k");
+      return `<div class="row"><span class="tag t-kana">Kana</span><span>${f ? `<b>${f}</b> new ready` : `<span class="muted">Nothing scheduled today</span>`}<br><a class="small" href="#browse/kana">Hiragana ${hh}/${ht} · Katakana ${kh}/${kt}</a></span><span class="sp"></span>
+        ${f ? `<button class="btn" data-act="learn" data-type="kana">Learn</button>` : `<button class="btn ghost" data-act="learn" data-type="kana" data-ahead="1">Learn ahead</button>`}</div>`;
+    }
     if (!a) return `<div class="row"><span class="tag t-${t}">${TYPE_LABEL[t]}</span><span class="muted">All N${lv} learned</span></div>`;
     return `<div class="row"><span class="tag t-${t}">${TYPE_LABEL[t]}</span>
       <span>${f ? `<b>${f}</b> new ready` : `<span class="muted">Nothing scheduled today</span>`}</span><span class="sp"></span>
@@ -317,17 +359,19 @@ VIEWS.today = () => {
   const gapN = TYPES.reduce((s, t) => s + gaps(t).length, 0);
   const behind = TYPES.reduce((s, t) => s + fresh(t).length, 0);
   const exportOld = !S.lastExport || diffDays(S.lastExport.slice(0, 10), today()) >= 7;
-  const dd = DRILL_OF_DAY[(effDay() + lv) % DRILL_OF_DAY.length];
+  const ddl = beginner() ? DRILL_OF_DAY_BEGIN : DRILL_OF_DAY, dd = ddl[(effDay() + lv) % ddl.length];
   app().innerHTML = `
   <section class="hero">
     <div class="kicker">${w === 0 ? `N${lv} plan starts ${fmtDate(S.settings.start)}. You can start now` : `JLPT N${lv} · Week ${w} of ${tw} · Phase ${ph.id}: ${ph.name}`}</div>
     <h1>${dl >= 0 ? `${dl} days to JLPT N${lv}` : "Exam day has passed. Plan your next level"}</h1>
     <p class="muted">${esc(ph.goal)}</p>
     <div class="stats3"><div><b>${streak()}</b><span>day streak</span></div><div><b>${Lg.r}</b><span>reviews today</span></div><div><b>${Math.round(Lg.sec / 60)}</b><span>min today</span></div></div>
+    ${dailyChecklist(due, Lg)}
   </section>
   ${dl < 0 ? `<div class="note">Exam done? Open <a href="#plan">Plan → Roadmap</a> to start the next level. Your earlier cards keep coming back in reviews.</div>` : ""}
   ${behind > 25 ? `<div class="note warn"><b>${behind} scheduled items not started yet.</b> Catch up with one extra Learn batch a day after reviews.</div>` : ""}
   ${exportOld && Object.keys(S.cards).length ? `<div class="note">Back up your progress: <a href="#settings">Settings → Export</a> (last: ${S.lastExport ? fmtDate(S.lastExport.slice(0, 10)) : "never"}).</div>` : ""}
+  ${startHere()}
   <section class="card"><h2>1 · Reviews <span class="muted small">~10–15 min</span></h2>
     ${due ? `<p><b>${due}</b> cards due${due > 150 ? " (do them in 2–3 sittings)" : ""}.</p><button class="btn big" data-act="review">Start reviews</button>` : `<p class="muted">No reviews due. Nice.</p>`}</section>
   <section class="card"><h2>2 · New N${lv} material <span class="muted small">~10 min</span></h2>${newRows}
@@ -339,6 +383,25 @@ VIEWS.today = () => {
     <div class="small muted">More in <a href="#drills">Drills</a> (writing, sentences, conjugation, numbers, dictation…) and the <a href="#guide">Guide</a>.</div></section>
   <section class="card"><h2>4 · This week's tasks</h2>${weekTasksHTML(Math.max(1, w))}</section>`;
 };
+function dailyChecklist(due, Lg) {
+  const items = [["Reviews", due === 0 && (Lg.r > 0 || !Object.keys(S.cards).length)], ["Something new", (Lg.n || 0) > 0], ["Practice drill", (Lg.dr || 0) > 0]];
+  const n = items.filter(x => x[1]).length;
+  return `<div class="checklist small"><span class="muted">Today ${n}/3:</span> ${items.map(([t, ok]) => `<span class="chip ${ok ? "on" : ""}">${ok ? "✓" : "○"} ${t}</span>`).join("")}</div>`;
+}
+function startHere() {
+  if (Object.keys(S.cards).length >= 30 || S.settings.hideStart) return "";
+  const g = id => !!S.guide[id], kk = kanaKnownN();
+  const steps = [
+    [canSpeak(), `Check audio: ${canSpeak() ? `Japanese voice found <button class="say" data-say="こんにちは">&#9654;</button>` : `no Japanese voice yet. <a href="#settings">How to install one</a> (needed for listening)`}`],
+    [g("writing-system") && g("sounds") && g("handwriting"), `Read <a href="#guide/writing-system">Guide lessons 1–3</a>: scripts, sounds, stroke-order rules (10 min)`],
+    [kk > 0, `Learn your first kana row: <b>New material → Kana → Learn</b>, then the quiz. Your first writing cards come with it`],
+    [(S.drills.listen || {}).n > 0 || (S.drills.phrases || {}).n > 0, `Practise with what you know: <a href="#drills/listen">listening ladder</a>, <a href="#drills/phrases">survival phrases</a>`],
+    [streak() >= 2, `Come back tomorrow. Daily reviews are what make it stick`]];
+  return `<section class="card start"><div class="spread"><h2>Start here</h2><button class="btn ghost sm" data-act="hideStart">Hide</button></div>
+    <ol class="steps">${steps.map(([ok, t]) => `<li class="${ok ? "done" : ""}">${t}</li>`).join("")}</ol>
+    <p class="small muted">Everything adapts to what you've learned: listening and reading drills only use kana and words you know, and unlock as you progress.</p></section>`;
+}
+ACTS.hideStart = () => { S.settings.hideStart = true; save(); render(); };
 VIEWS.gaps = () => {
   const rows = TYPES.map(t => { const g = gaps(t); if (!g.length) return "";
     const byLv = LEVELS.filter(l => l > L()).map(l => [l, g.filter(id => ITEMS[id].lv === l).length]).filter(x => x[1]);
@@ -392,7 +455,9 @@ VIEWS.lesson = () => {
 ACTS.lessonDone = () => { const ids = LESSON.slice(); if (S.settings.writing !== false) LESSON.forEach(id => { const w = writeOf(id); if (w) ids.push(w.id); }); ids.forEach(introduce); save(); startSession(ids, "learn"); LESSON = []; };
 function exampleHTML(i) {
   const ex = EXAMPLES[`${i.w}|${i.r}`]; if (!ex) return "";
-  return `<div class="exs">${ex.map(([fu, en]) => `<div><span class="jp ${S.settings.furi ? "" : "furi-tap"}">${ruby(fu)}</span> ${sayBtn(plainJa(fu))}<div class="small muted">${esc(en)}</div></div>`).join("")}</div>`;
+  const body = ex.map(([fu, en]) => `<div>${adaptRuby(fu)} ${sayBtn(plainJa(fu))}<div class="small muted">${esc(en)}</div></div>`).join("");
+  return ex.some(([fu]) => canHear(bare(fu))) ? `<div class="exs">${body}</div>`
+    : `<details class="exs"><summary class="small muted">Example sentence (uses kana you haven't learned yet)</summary>${body}</details>`;
 }
 function kanjiBreak(w) {
   const ks = [...new Set([...w].filter(c => KANJI_BY_CHAR[c]))];
@@ -557,6 +622,9 @@ VIEWS.kana = ch => {
 
 // ---- Drills ----
 const DRILLS = {
+  listen: ["Listening ladder", "Start here for listening: hear kana you've learned, then words made only of those kana, then look-alike sounds (おばさん vs おばあさん)."],
+  kread: ["Read kana words", "Real words written only in the kana you know, plus a 60-second kana sprint to build reading speed."],
+  phrases: ["Survival phrases", "40 everyday phrases (greetings, classroom, shopping) with audio and a quiz."],
   write: ["Writing", "Handwrite kana, kanji and whole words from memory. Every stroke is checked for shape, direction and order."],
   sent: ["Sentence reading", "Thousands of real sentences (Tatoeba) that use only the kanji of your level, with tap-to-show furigana and audio."],
   conj: ["Conjugation", "Type verb and adjective forms. Builds the grammar foundation for every level."],
@@ -572,7 +640,10 @@ VIEWS.drills = (name, arg) => {
   if (name && DRILL_VIEWS[name]) return DRILL_VIEWS[name](arg);
   DR = null;
   app().innerHTML = `<section class="card"><h2>Drills</h2><p class="muted small">Short, focused practice for skills flashcards can't train. Drills count toward your streak and study time.</p>
-   <div class="tests">${Object.entries(DRILLS).map(([k, [t, d]]) => { const s = S.drills[k]; return `<a class="tbtn" href="#drills/${k}"><b>${t}</b><span>${d}</span>${s ? `<span class="small">${s.n} done · ${pct(s.ok, s.n)}% correct</span>` : ""}</a>`; }).join("")}</div></section>`;
+   <div class="tests">${Object.entries(DRILLS).map(([k, [t, d]]) => { const s = S.drills[k];
+     const lock = k === "sent" ? sentencePool(false).length < 15 : k === "dict" ? readableWords(20).length < 4 : false;
+     const tag = ["listen", "kread", "phrases"].includes(k) ? ' <span class="tag">beginner</span>' : lock ? ' <span class="tag">unlocks as you learn more kana</span>' : "";
+     return `<a class="tbtn ${lock ? "locked" : ""}" href="#drills/${k}"><b>${t}${tag}</b><span>${d}</span>${s && s.n ? `<span class="small">${s.n} done · ${pct(s.ok, s.n)}% correct</span>` : ""}</a>`; }).join("")}</div></section>`;
 };
 function drillShell(name, inner, extra = "") {
   const s = S.drills[name] || { n: 0, ok: 0 };
@@ -672,9 +743,9 @@ DRILL_VIEWS.num = mode => {
 DRILL_VIEWS.dict = () => {
   if (!canSpeak()) { drillShell("dict", `<p>Dictation needs a Japanese text-to-speech voice. See <a href="#settings">Settings</a> for how to install one (Android and Windows have free voices).</p>`); return; }
   if (!DR || DR.name !== "dict") {
-    let pool = ALL("vocab").filter(id => S.cards[id] && S.cards[id].ivl >= 1).map(id => ITEMS[id]);
-    if (pool.length < 20) pool = curIds("vocab").map(id => ITEMS[id]);
-    pool = pool.filter(i => !/[～〜]/.test(i.r));
+    let pool = ALL("vocab").filter(id => S.cards[id] && S.cards[id].ivl >= 1).map(id => ITEMS[id]).filter(i => !/[～〜]/.test(i.r) && canHear(i.r));
+    if (pool.length < 15) pool = readableWords(150);
+    if (pool.length < 4) { drillShell("dict", lockedNote("Dictation", pool.length, "words")); return; }
     const it = rnd(pool); DR = { name: "dict", it }; setTimeout(() => speak(it.r), 300);
   }
   const q = DR;
@@ -806,18 +877,21 @@ ACTS.dwskip = () => { const q = DR; q.res.push({ grade: 1, misses: 0, hinted: tr
 // sentence reading
 DRILL_VIEWS.sent = mode => {
   mode = mode === "listen" && canSpeak() ? "listen" : "read";
-  if (!DR || DR.name !== "sent" || DR.mode !== mode) {
-    const pool = (L() === 5 ? [5] : [5, 4]).flatMap(l => SENTENCES[l] || []); const x = rnd(pool);
-    DR = { name: "sent", mode, fu: x[0], en: x[1], shown: false };
-    if (mode === "listen") { const t = plainJa(x[0]); setTimeout(() => speak(t), 300); }
-  }
-  const q = DR, furi = S.settings.furi;
+  const pool = sentencePool(mode === "listen"), furi = S.settings.furi;
   const tabs = `<div class="pills"><a class="pill ${mode === "read" ? "on" : ""}" href="#drills/sent/read">Read</a><a class="pill ${mode === "listen" ? "on" : ""}" href="#drills/sent/listen">${canSpeak() ? "Listen first" : "Listen (needs a Japanese voice)"}</a>
     <label class="chk small"><input type="checkbox" id="sfuri" ${furi ? "checked" : ""}> show all furigana</label></div>`;
-  const text = `<div class="jp sentence ${furi ? "" : "furi-tap"}">${ruby(q.fu)}</div>`;
-  const front = mode === "listen" && !q.shown ? `<button class="btn big" data-say="${esc(plainJa(q.fu))}">&#9654; Play again</button><div class="muted small">What does it mean? Then reveal.</div>` : `${text}<div>${sayBtn(plainJa(q.fu))}</div>${furi ? "" : `<div class="muted small">Tap a kanji to see its reading.</div>`}`;
-  drillShell("sent", `<div class="front">${front}</div>
-    ${q.shown ? `<div class="back"><div class="big-en">${esc(q.en)}</div>${mode === "listen" ? "" : `<div class="jp small muted">${esc(readingOf(q.fu))}</div>`}</div>
+  if (mode === "listen" && vocabKnownN() < 30) { DR = null; drillShell("sent", `<div class="note"><b>Sentence listening unlocks after your first 30 words</b> (you know ${vocabKnownN()}). Until then, train your ear with the <a href="#drills/listen/words">word listening ladder</a> and <a href="#drills/phrases/quiz">survival phrases</a>. Sentence <a href="#drills/sent/read">reading</a> is available as soon as you know the kana.</div>`, tabs); $("#sfuri").addEventListener("change", e => { S.settings.furi = e.target.checked; save(); render(); }); return; }
+  if (pool.length < 15) { DR = null; drillShell("sent", lockedNote(mode === "listen" ? "Sentence listening" : "Sentence reading", pool.length, "sentences"), tabs); $("#sfuri").addEventListener("change", e => { S.settings.furi = e.target.checked; save(); render(); }); return; }
+  if (!DR || DR.name !== "sent" || DR.mode !== mode) {
+    const x = rnd(pool); DR = { name: "sent", mode, fu: x[0], en: x[1], shown: false };
+    if (mode === "listen") { const t = plainJa(x[0]); setTimeout(() => speak(t), 300); }
+  }
+  const q = DR;
+  const text = `<div class="sentence">${adaptRuby(q.fu)}</div>`;
+  const front = mode === "listen" && !q.shown ? `<button class="btn big" data-say="${esc(plainJa(q.fu))}">&#9654; Play again</button><div class="muted small">What does it mean? Then reveal.</div>`
+    : `${text}<div>${sayBtn(plainJa(q.fu))}</div>${furi ? "" : `<div class="muted small">Furigana shows over kanji you haven't learned. Tap a kanji you know to check it.</div>`}`;
+  drillShell("sent", `<div class="small muted">${pool.length} sentences match what you know</div><div class="front">${front}</div>
+    ${q.shown ? `<div class="back"><div class="big-en">${esc(q.en)}</div>${mode === "listen" ? text : `<div class="jp small muted">${esc(readingOf(q.fu))}</div>`}</div>
       <div class="grades three"><button class="g g1" data-act="sgrade" data-g="0"><span>Didn't get it</span></button><button class="g g2" data-act="sgrade" data-g="1"><span>Partly</span></button><button class="g g3" data-act="sgrade" data-g="2"><span>Understood</span></button></div>`
       : `<button class="btn big wide" data-act="sshow">Show meaning <span class="k">Space</span></button>`}`, tabs);
   $("#sfuri").addEventListener("change", e => { S.settings.furi = e.target.checked; save(); render(); });
@@ -828,6 +902,102 @@ document.addEventListener("keydown", e => {
   if (!DR || DR.name !== "sent" || e.target.matches("input,textarea")) return;
   if (!DR.shown && (e.key === " " || e.key === "Enter")) { e.preventDefault(); ACTS.sshow(); }
   else if (DR.shown && /^[1-3]$/.test(e.key)) ACTS.sgrade({ g: +e.key - 1 });
+});
+
+// ---- beginner drills ----
+const learnedKana = () => ORDER.kana[5].map(id => ITEMS[id]).filter(i => S.cards[i.id] && S.cards[i.id].reps);
+const MINPAIRS = [["おばさん", "おばあさん", "aunt", "grandmother"], ["おじさん", "おじいさん", "uncle", "grandfather"], ["きて", "きって", "come (て-form)", "stamp"],
+  ["びょういん", "びよういん", "hospital", "beauty salon"], ["ここ", "こうこう", "here", "high school"], ["いえ", "いいえ", "house", "no"], ["ゆき", "ゆうき", "snow", "courage"],
+  ["おと", "おっと", "sound", "husband"], ["さか", "さっか", "slope", "writer"], ["かた", "かった", "shoulder", "bought"], ["へや", "へいや", "room", "plain (land)"],
+  ["しゅじん", "しじん", "husband", "poet"], ["きた", "きった", "came / north", "cut"], ["いた", "いった", "was there", "went / said"], ["とり", "とおり", "bird", "street"], ["え", "ええ", "picture", "yes"]];
+const noVoice = () => `<div class="note">Listening drills need a Japanese text-to-speech voice. <a href="#settings">Settings</a> explains how to install one (free on Android and Windows).</div>`;
+DRILL_VIEWS.listen = mode => {
+  mode = ["sounds", "words", "pairs"].includes(mode) ? mode : "sounds";
+  const tabs = `<div class="pills">${[["sounds", "1 · Kana sounds"], ["words", "2 · Words"], ["pairs", "3 · Similar sounds"]].map(([m, l]) => `<a class="pill ${m === mode ? "on" : ""}" href="#drills/listen/${m}">${l}</a>`).join("")}</div>`;
+  if (!canSpeak()) { drillShell("listen", noVoice(), tabs); return; }
+  if (!DR || DR.name !== "listen" || DR.mode !== mode) {
+    let q = null;
+    if (mode === "sounds") {
+      const pool = learnedKana(); if (pool.length < 4) { drillShell("listen", lockedNote("Kana listening", pool.length, "kana"), tabs); return; }
+      const t = rnd(pool), sim = i => (i.r[0] === t.r[0] ? 1 : 0) + (i.r.slice(-1) === t.r.slice(-1) ? 1 : 0) + Math.random();
+      const others = pool.filter(i => i.script === t.script && i.ch !== t.ch).sort((a, b) => sim(b) - sim(a)).slice(0, 3);
+      q = { say: t.ch, ans: t.ch, opts: shuffle([t.ch, ...others.map(i => i.ch)]), info: `${t.ch} = ${t.r}` };
+    } else if (mode === "words") {
+      const pool = readableWords(); if (pool.length < 4) { drillShell("listen", lockedNote("Word listening", pool.length, "words"), tabs); return; }
+      const t = rnd(pool.slice(0, 120)), near = pool.filter(i => i.r !== t.r && Math.abs([...i.r].length - [...t.r].length) <= 1);
+      q = { say: t.r, ans: t.r, opts: shuffle([t.r, ...pick(near.length >= 3 ? near : pool.filter(i => i.r !== t.r), 3).map(i => i.r)]), info: `${t.w !== t.r ? t.w + " · " : ""}${t.e}` };
+    } else {
+      const pool = MINPAIRS.filter(p => canHear(p[0]) && canHear(p[1]));
+      if (!pool.length) { drillShell("listen", lockedNote("Similar-sounds listening", 0, "word pairs"), tabs); return; }
+      const pr = rnd(pool), k = rint(0, 1);
+      q = { say: pr[k], ans: pr[k], opts: [pr[0], pr[1]], info: `${pr[0]} = ${pr[2]} · ${pr[1]} = ${pr[3]}. Long vowels and small っ change the meaning.` };
+    }
+    DR = Object.assign({ name: "listen", mode }, q); setTimeout(() => speak(q.say), 300);
+  }
+  const q = DR;
+  drillShell("listen", `<div class="front"><button class="btn big" data-say="${esc(q.say)}">&#9654; Play again</button><div class="muted small">Which one did you hear?</div>
+    ${optsHTML(q.opts, q.ans, q.done ? q.picked : null, "lpick")}</div>${q.done ? resultHTML(q.ok, `<span class="jp">${esc(q.ans)}</span>`, `<div class="small muted">${esc(q.info)}</div>`) : ""}`, tabs);
+};
+ACTS.lpick = d => { const q = DR; if (q.done) return; q.picked = d.o; q.ok = d.o === q.ans; q.done = true; drillLog("listen", q.ok); speak(q.say); render(); };
+
+DRILL_VIEWS.kread = mode => {
+  mode = mode === "speed" ? "speed" : "words";
+  const tabs = `<div class="pills"><a class="pill ${mode === "words" ? "on" : ""}" href="#drills/kread/words">Read words</a><a class="pill ${mode === "speed" ? "on" : ""}" href="#drills/kread/speed">60-second kana sprint</a></div>`;
+  if (mode === "words") {
+    const pool = readableWords();
+    if (pool.length < 4) { DR = null; drillShell("kread", lockedNote("Reading kana words", pool.length, "words"), tabs); return; }
+    if (!DR || DR.name !== "kread" || DR.mode !== "words") DR = { name: "kread", mode: "words", it: rnd(pool.slice(0, 150)) };
+    const q = DR, it = q.it;
+    drillShell("kread", `<div class="small muted">${pool.length} real words use only the kana you know</div><div class="front"><div class="jp huge2">${esc(it.r)}</div><div class="muted small">Read it: type the romaji, Enter</div></div>
+      ${q.done ? resultHTML(q.ok, `<span class="jp">${esc(it.r)}</span> ${sayBtn(it.r)}`, `<div class="big-en">${esc(it.e)}</div>${it.w !== it.r ? `<div class="small muted">Usually written <span class="jp">${esc(it.w)}</span></div>` : ""}${q.ok ? "" : `<div class="small">You typed: <span class="jp badtxt">${esc(q.typed)}</span></div>`}`) : typedInput("romaji, Enter")}`, tabs);
+    if (!q.done) wireTyped(v => { q.typed = IME.norm(v); q.ok = q.typed === IME.norm(it.r); q.done = true; drillLog("kread", q.ok); speak(it.r); render(); });
+    return;
+  }
+  let pool = learnedKana(); if (pool.length < 5) pool = ORDER.kana[5].slice(0, 10).map(id => ITEMS[id]);
+  if (!DR || DR.name !== "kread" || DR.mode !== "speed") DR = { name: "kread", mode: "speed", state: "ready" };
+  const q = DR, best = (S.drills.sprint || {}).best || 0;
+  if (q.state === "ready") { drillShell("kread", `<div class="front"><div class="big-en">Read as many kana as you can in 60 seconds</div><p class="muted small">Type the romaji; it moves on as soon as you're right. Enter skips. Uses the ${pool.length} kana you've learned. Personal best: <b>${best}</b></p><button class="btn big" data-act="sprint">Start</button></div>`, tabs); return; }
+  if (q.state === "done") { drillShell("kread", `<div class="front"><div class="ans ${q.n > (q.prevBest || 0) ? "ok" : ""}">${q.n} kana in 60 s${q.n > (q.prevBest || 0) ? " · new best!" : ""}</div><p class="muted small">${q.miss} skipped. Speed comes from reading every day; aim for 40+.</p>${q.missed.length ? `<p class="jp">Practise: ${q.missed.map(i => `${i.ch} (${i.r})`).join(" · ")}</p>` : ""}<button class="btn big" data-act="sprint">Again</button></div>`, tabs); return; }
+  drillShell("kread", `<div class="front"><div class="prog"><div id="sbar" style="width:100%"></div></div><div id="sk" class="jp huge">${q.cur.ch}</div><div class="small muted"><span id="sn">${q.n}</span> correct</div>
+    <input id="din" class="kin" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="romaji"><div id="sflash" class="small badtxt"></div></div>`, tabs);
+  const inp = $("#din"); inp.focus();
+  const nextK = () => { let n; do { n = rnd(pool); } while (pool.length > 1 && n === q.cur); q.cur = n; $("#sk").textContent = n.ch; inp.value = ""; };
+  inp.addEventListener("input", () => { const v = inp.value.trim().toLowerCase(); if (q.cur.ans.includes(v)) { q.n++; $("#sn").textContent = q.n; $("#sflash").textContent = ""; nextK(); } });
+  inp.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); q.miss++; if (!q.missed.includes(q.cur)) q.missed.push(q.cur); $("#sflash").textContent = `${q.cur.ch} = ${q.cur.r}`; nextK(); } });
+  clearInterval(q.timer);
+  q.timer = setInterval(() => {
+    const left = q.end - Date.now(), bar = $("#sbar");
+    if (bar) bar.style.width = Math.max(0, (100 * left) / 60000) + "%";
+    if (left <= 0 || !location.hash.startsWith("#drills/kread/speed")) {
+      clearInterval(q.timer); if (left > 0) { DR = null; return; }
+      q.state = "done"; const sp = (S.drills.sprint = S.drills.sprint || { best: 0, runs: 0 }); q.prevBest = sp.best; sp.best = Math.max(sp.best, q.n); sp.runs++;
+      drillLog("kread", q.n >= q.prevBest); render();
+    }
+  }, 250);
+};
+ACTS.sprint = () => { let pool = learnedKana(); if (pool.length < 5) pool = ORDER.kana[5].slice(0, 10).map(id => ITEMS[id]); DR = { name: "kread", mode: "speed", state: "run", n: 0, miss: 0, missed: [], cur: rnd(pool), end: Date.now() + 60000 }; render(); };
+
+DRILL_VIEWS.phrases = mode => {
+  mode = mode === "quiz" ? "quiz" : "list";
+  const tabs = `<div class="pills"><a class="pill ${mode === "list" ? "on" : ""}" href="#drills/phrases/list">All phrases</a><a class="pill ${mode === "quiz" ? "on" : ""}" href="#drills/phrases/quiz">Quiz</a></div>`;
+  if (mode === "list") {
+    DR = null; const groups = [...new Set(PHRASES.map(p => p[2]))];
+    drillShell("phrases", `<p class="muted small">Useful from day one. Listen, repeat out loud, and notice the kana you already know.</p>${groups.map(g => `<h3>${esc(g)}</h3><table class="vt">${PHRASES.filter(p => p[2] === g).map(p => `<tr><td class="jp">${esc(p[0])}</td><td>${sayBtn(p[0])}</td><td class="small">${esc(p[1])}</td></tr>`).join("")}</table>`).join("")}`, tabs);
+    return;
+  }
+  if (!DR || DR.name !== "phrases") {
+    const p = rnd(PHRASES), wrong = pick(PHRASES.filter(x => x[1] !== p[1]), 3).map(x => x[1]);
+    DR = { name: "phrases", p, ans: p[1], opts: shuffle([p[1], ...wrong]) }; if (canSpeak()) setTimeout(() => speak(p[0]), 300);
+  }
+  const q = DR;
+  drillShell("phrases", `<div class="front">${canSpeak() && !q.done ? `<button class="btn big" data-say="${esc(q.p[0])}">&#9654; Play again</button><div class="muted small">What does it mean? (text appears after you answer)</div>` : `<div class="jp huge2">${esc(q.p[0])}</div>`}
+    ${optsHTML(q.opts, q.ans, q.done ? q.picked : null, "ppick")}</div>${q.done ? resultHTML(q.ok, `<span class="jp">${esc(q.p[0])}</span> ${sayBtn(q.p[0])}`, `<div class="small muted">${esc(q.p[2])}</div>`) : ""}`, tabs);
+};
+ACTS.ppick = d => { const q = DR; if (q.done) return; q.picked = d.o; q.ok = d.o === q.ans; q.done = true; drillLog("phrases", q.ok); render(); };
+document.addEventListener("keydown", e => {
+  if (!DR || DR.done || e.target.matches("input,textarea") || !/^[1-4]$/.test(e.key)) return;
+  const o = DR.opts && DR.opts[+e.key - 1]; if (!o) return;
+  if (DR.name === "listen") ACTS.lpick({ o }); else if (DR.name === "phrases") ACTS.ppick({ o });
 });
 
 // ---- Guide ----

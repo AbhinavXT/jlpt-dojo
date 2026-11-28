@@ -2,7 +2,7 @@
 "use strict";
 const fs = require("fs"), path = require("path"), vm = require("vm");
 const SRC = path.join(__dirname, "..", "src");
-const { FSRS, IME, CONJ, NUM } = require(path.join(SRC, "core.js"));
+const { FSRS, IME, CONJ, NUM, STAGE } = require(path.join(SRC, "core.js"));
 
 let pass = 0, fail = 0;
 const t = (name, fn) => { try { fn(); pass++; } catch (e) { fail++; console.log("FAIL:", name, "\n   ", e.message); } };
@@ -11,10 +11,10 @@ const ok = (c, msg) => { if (!c) throw new Error(msg); };
 
 // load data files into a sandbox
 const ctx = {}; vm.createContext(ctx);
-for (const f of ["data_kana.js", "data_kanji.js", "data_grammar.js", "data_grammar_up.js", "data_words.js", "data_reading.js", "data_reading2.js", "data_order.js", "data_mnemonics.js", "data_guide.js", "data_n4notes.js", "curriculum.js"])
+for (const f of ["data_kana.js", "data_kanji.js", "data_grammar.js", "data_grammar_up.js", "data_words.js", "data_reading.js", "data_reading2.js", "data_order.js", "data_phrases.js", "data_mnemonics.js", "data_guide.js", "data_n4notes.js", "curriculum.js"])
   vm.runInContext(fs.readFileSync(path.join(SRC, f), "utf8") + `\n;globalThis.__=Object.assign(globalThis.__||{}, {${{
     "data_kana.js": "KANA_GROUPS,KANA_NOTES", "data_kanji.js": "KANJI", "data_grammar.js": "GRAMMAR", "data_grammar_up.js": "GRAMMAR_UP",
-    "data_words.js": "VERBS,ADJS", "data_reading.js": "READINGS", "data_order.js": "ORDER_SENTENCES", "data_reading2.js": "READINGS", "data_mnemonics.js": "MNEMO", "data_guide.js": "GUIDE", "data_n4notes.js": "N4_NOTES", "curriculum.js": "PACING,PHASES,WEEKS,F" }[f]}});`, ctx);
+    "data_words.js": "VERBS,ADJS", "data_reading.js": "READINGS", "data_order.js": "ORDER_SENTENCES", "data_phrases.js": "PHRASES", "data_reading2.js": "READINGS", "data_mnemonics.js": "MNEMO", "data_guide.js": "GUIDE", "data_n4notes.js": "N4_NOTES", "curriculum.js": "PACING,PHASES,WEEKS,F" }[f]}});`, ctx);
 const D = ctx.__;
 const KANJI_UP = JSON.parse(fs.readFileSync(path.join(SRC, "data", "kanji_levels.json"), "utf8"));
 const STROKES = JSON.parse(fs.readFileSync(path.join(SRC, "data", "strokes.json"), "utf8"));
@@ -149,6 +149,22 @@ t("example + graded sentence data", () => {
   ok(Object.keys(ex).length > 2000, "examples"); ok(sen[5].length >= 1000 && sen[4].length >= 1000, "graded sentences");
   Object.values(ex).slice(0, 300).forEach(v => v.forEach(([fu, en]) => ok(fu && en && !/[\[\]]/.test(W.plainJa(fu)), "bad example " + fu)));
   const parts = JSON.parse(fs.readFileSync(path.join(SRC, "data", "parts.json"), "utf8")); ok(parts["休"] && parts["休"].length === 2, "parts 休 = 亻 + 木");
+});
+
+t("learner stage: readable() only passes known kana/kanji", () => {
+  const ks = { h: new Set([..."あいうえおかきくけこ"]), k: new Set(), kanji: new Set(), yoonH: false, yoonK: false };
+  ok(STAGE.readable("かお", ks) && STAGE.readable("あおい。", ks), "known kana + punctuation");
+  ok(!STAGE.readable("かさ", ks) && !STAGE.readable("コーヒー", ks) && !STAGE.readable("何", ks) && !STAGE.readable("3じ", ks), "unknown kana / katakana / kanji / digits");
+  ok(!STAGE.readable("きょう", ks), "yoon needs the combination lesson");
+  ks.h.add("よ"); ks.h.add("つ"); ks.yoonH = true; ok(STAGE.readable("きょう", ks) && STAGE.readable("こっか", ks), "small kana map to their base kana");
+  ks.k = new Set([..."コヒ"]); ok(STAGE.readable("コーヒー", ks), "long mark with katakana");
+  ks.kanji.add("日"); ok(STAGE.readable("日", ks), "known kanji");
+});
+t("phrases and starter sentences", () => {
+  ok(D.PHRASES.length >= 35, "phrase count"); D.PHRASES.forEach(p => ok(p.length === 3 && p.every(Boolean), "phrase " + p[0]));
+  eq(new Set(D.PHRASES.map(p => p[1])).size, D.PHRASES.length, "unique meanings (quiz options)");
+  const sen = JSON.parse(fs.readFileSync(path.join(SRC, "data", "sentences.json"), "utf8")); ok(sen.s && sen.s.length >= 2000, "starter pool");
+  ok(sen.s.filter(x => !/\[/.test(x[0])).length > 300, "kana-only starter sentences exist");
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -4,12 +4,14 @@
 
 // ---------- furigana ----------
 const FURI_RE = /\[([^\]|]+)((?:\|[^\]|]*)+)\]|([^[]+)/g;
-function ruby(fu) {
+/** known (optional Set of kanji): kanji you know get class "k" (furigana on tap); others "u" (furigana always shown). */
+function ruby(fu, known) {
+  const cls = s => (known ? ` class="${[...s].every(c => known.has(c)) ? "k" : "u"}"` : "");
   return String(fu).replace(FURI_RE, (m, s, rs, plain) => {
     if (plain) return esc(plain);
     const r = rs.split("|").slice(1), cs = [...s];
-    if (r.length === cs.length && r.every(Boolean)) return cs.map((c, i) => `<ruby>${esc(c)}<rt>${esc(r[i])}</rt></ruby>`).join("");
-    const j = r.join(""); return j ? `<ruby>${esc(s)}<rt>${esc(j)}</rt></ruby>` : esc(s);
+    if (r.length === cs.length && r.every(Boolean)) return cs.map((c, i) => `<ruby${cls(c)}>${esc(c)}<rt>${esc(r[i])}</rt></ruby>`).join("");
+    const j = r.join(""); return j ? `<ruby${cls(s)}>${esc(s)}<rt>${esc(j)}</rt></ruby>` : esc(s);
   });
 }
 const plainJa = fu => String(fu).replace(/\[([^\]|]+)(?:\|[^\]]*)?\]/g, "$1");

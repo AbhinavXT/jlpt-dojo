@@ -212,4 +212,29 @@ const NUM = (() => {
   return { read, time, minutes, day, MONTH, WEEK, WEEKK, C, counter, yen };
 })();
 
-if (typeof module !== "undefined") module.exports = { FSRS, IME, CONJ, NUM };
+// ---------- learner stage: can this learner read / hear a string with what they know? ----------
+const STAGE = (() => {
+  const SMALL = { "ぁ": "あ", "ぃ": "い", "ぅ": "う", "ぇ": "え", "ぉ": "お", "ゃ": "や", "ゅ": "ゆ", "ょ": "よ", "っ": "つ", "ゎ": "わ",
+    "ァ": "ア", "ィ": "イ", "ゥ": "ウ", "ェ": "エ", "ォ": "オ", "ャ": "ヤ", "ュ": "ユ", "ョ": "ヨ", "ッ": "ツ", "ヮ": "ワ" };
+  const YOON = "ゃゅょャュョ";
+  /** ks = { h: Set(hiragana), k: Set(katakana), kanji: Set, yoonH: bool, yoonK: bool }. Returns true if every character is known. */
+  function readable(str, ks) {
+    for (const ch of String(str)) {
+      if (/[\u3041-\u3096]/.test(ch)) {
+        const b = SMALL[ch];
+        if (b) { if (YOON.includes(ch) && !ks.yoonH) return false; if (!ks.h.has(b)) return false; }
+        else if (!ks.h.has(ch)) return false;
+      } else if (/[\u30a1-\u30fa]/.test(ch)) {
+        const b = SMALL[ch];
+        if (b) { if (YOON.includes(ch) && !ks.yoonK) return false; if (!ks.k.has(b)) return false; }
+        else if (!ks.k.has(ch)) return false;
+      } else if (ch === "ー") { if (!ks.k.size) return false; }
+      else if (/[\u4e00-\u9faf\u3005]/.test(ch)) { if (!ks.kanji || !ks.kanji.has(ch)) return false; }
+      else if (/[0-9０-９A-Za-zＡ-Ｚａ-ｚ]/.test(ch)) return false;
+    }
+    return true;
+  }
+  return { readable, SMALL };
+})();
+
+if (typeof module !== "undefined") module.exports = { FSRS, IME, CONJ, NUM, STAGE };
